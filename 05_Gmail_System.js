@@ -81,6 +81,24 @@ function extractCalendlyInfo(subject, body) {
   return { email: email, name: "", when: when };
 }
 
+// Lightweight keyword check — no Claude call needed — to detect whether
+// an email is asking to schedule a meeting. Used to decide if a forwarded
+// "client" email should get a calendar reply vs an internal log update.
+function looksLikeSchedulingRequest(body) {
+  var t = (body || "").toLowerCase();
+  var keywords = [
+    "available", "availability", "schedule", "scheduling", "meeting",
+    "call", "catch up", "catch-up", "coordinate", "book a time",
+    "set up a time", "find a time", "next week", "this week",
+    "would you be free", "when are you", "what time", "what times",
+    "works for you", "work for you", "connect", "sync up", "sync"
+  ];
+  for (var i = 0; i < keywords.length; i++) {
+    if (t.indexOf(keywords[i]) !== -1) return true;
+  }
+  return false;
+}
+
 // ---- Spam cleanup (run once per day on a separate trigger) ----------
 // Goes through the Gmail spam folder. For each thread:
 //   - If it looks like a real email (lead/client/legit), rescue it to inbox

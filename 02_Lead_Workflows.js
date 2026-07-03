@@ -1,4 +1,4 @@
-function handleNewLead(thread, msg, classification, brand, memory) {
+function handleNewLead(thread, msg, classification, brand, memory, forwardedByEmail) {
   var subject = msg.getSubject() || "";
   var body = msg.getPlainBody() || "";
   var from = msg.getFrom() || "";
@@ -27,7 +27,11 @@ function handleNewLead(thread, msg, classification, brand, memory) {
     memory: memory
   });
 
-  sendEmail({ to: leadEmail, subject: drafted.subject, body: drafted.body, bcc: CONFIG.MANAGER });
+  // BCC the manager, and also the team member who forwarded if applicable.
+  var bccList = [CONFIG.MANAGER];
+  if (forwardedByEmail && forwardedByEmail !== CONFIG.MANAGER) bccList.push(forwardedByEmail);
+
+  sendEmail({ to: leadEmail, subject: drafted.subject, body: drafted.body, bcc: bccList.join(",") });
 
   appendObjectRow("Leads", {
     "Date": isoNow(),
