@@ -27,11 +27,18 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
     memory: memory
   });
 
-  // BCC the manager, and also the team member who forwarded if applicable.
   var bccList = [CONFIG.MANAGER];
   if (forwardedByEmail && forwardedByEmail !== CONFIG.MANAGER) bccList.push(forwardedByEmail);
 
-  sendEmail({ to: leadEmail, subject: drafted.subject, body: drafted.body, bcc: bccList.join(",") });
+  if (forwardedByEmail) {
+    // Forwarded lead: Sarah is starting a fresh conversation with the external
+    // person who never emailed sarah directly, so a new email is correct.
+    sendEmail({ to: leadEmail, subject: drafted.subject, body: drafted.body, bcc: bccList.join(",") });
+  } else {
+    // Direct inbound email: reply in-thread so the lead's next reply lands in
+    // the same thread and hasLeadRecord matching works correctly.
+    sendReplyToMessage(msg, drafted.body, { bcc: bccList.join(",") });
+  }
 
   appendObjectRow("Leads", {
     "Date": isoNow(),
@@ -49,7 +56,16 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
 
   PropertiesService.getScriptProperties().setProperty(
     CONFIG.PROP_PREFIX + threadId,
-    JSON.stringify({ threadId: threadId, leadEmail: leadEmail, leadName: leadName, subject: subject, brand: brand, sentAt: new Date().getTime(), followUpCount: 0, replied: false })
+    JSON.stringify({
+      threadId: threadId,
+      leadEmail: leadEmail,
+      leadName: leadName,
+      subject: subject,
+      brand: brand,
+      sentAt: new Date().getTime(),
+      followUpCount: 0,
+      replied: false
+    })
   );
 
   thread.addLabel(getOrCreateLabel(CONFIG.LABEL_LEAD));
@@ -80,12 +96,18 @@ function handleLeadReply(thread, memory) {
   var offeredTime = extractOfferedTime(body);
   var slotsDetailed = getAvailableSlotsDetailed(tzRegion);
 
+  // Build thread context so Claude can see the full conversation when the
+  // lead says something like "I agree with the proposal" or "Tuesday works" —
+  // without this context Claude can't know what was previously offered.
+  var threadContext = buildThreadContext(messages);
+
   var drafted = draftLeadReply({
     mode: "reply",
     brand: brand,
     leadName: name,
     leadEmail: replyToEmail,
     body: body,
+    threadContext: threadContext,
     slotsDetailed: slotsDetailed,
     tzRegion: tzRegion,
     offeredTime: offeredTime,
@@ -101,7 +123,8 @@ function handleLeadReply(thread, memory) {
 
   if (drafted.booking) {
     updateLeadStatus(replyToEmail, "booked", "Meeting booked: " + drafted.booking.start + " (event " + drafted.booking.eventId + ")");
-    logAction(from, subject, "lead", "meeting_booked", "", replyToEmail, "Calendar invite sent for " + drafted.booking.start + ". Guests: " + drafted.booking.guests.join(", "));
+    logAction(from, subject, "lead", "meeting_booked", "", replyToEmail,
+      "Calendar invite sent for " + drafted.booking.start + ". Guests: " + drafted.booking.guests.join(", "));
     updateMemoryBrief("BOOKING", "Meeting booked for " + replyToEmail + " at " + drafted.booking.start);
   } else {
     updateLeadStatus(replyToEmail, "replied", "Lead replied. Offered time: " + (offeredTime || "none"));
@@ -112,46 +135,78 @@ function handleLeadReply(thread, memory) {
   thread.markRead();
 }
 
+// Returns the last few messages of a thread as plain text, newest last,
+// so Claude has conversation context when processing a lead reply.
+function buildThreadContext(messages) {
+  var take = Math.min(messages.length, 4);
+  var parts = [];
+  for (var i = messages.length - take; i < messages.length - 1; i++) {
+    var m = messages[i];
+    var mFrom = m.getFrom() || "";
+    var mBody = (m.getPlainBody() || "").substring(0, 600);
+    parts.push("[" + mFrom + "]\n" + mBody);
+  }
+  return parts.join("\n\n---\n\n");
+}
+
 // ---- Single tool-use call that drafts the lead email, and books a real
-// calendar invite if (and only if) the lead's message exactly confirms
-// one of the offered slots. Uses the reply_to_lead / book_meeting tools
-// from 10_Tool_Registry.js.
+// calendar invite if the lead confirms a slot. Uses the reply_to_lead /
+// book_meeting tools from 10_Tool_Registry.js.
 function draftLeadReply(opts) {
   var target = TARGET_TZ[opts.tzRegion] || TARGET_TZ.US;
   var system = buildEmailSystem(opts.memory, opts.brand);
   var slotLabels = opts.slotsDetailed.map(function(s) { return s.label; });
 
   var slotBlock = slotLabels.length > 0
-    ? "Coded calendar slots, use verbatim, do not alter dates/weekdays/times/timezone labels, do not invent availability:\n" + slotLabels.join("\n") + "\n\nOr book directly: " + CONFIG.CALENDLY
-    : "No open coded slots right now. Offer: " + CONFIG.CALENDLY;
+    ? "Available slots (use verbatim, do not alter):\n" + slotLabels.join("\n") + "\n\nOr book directly: " + CONFIG.CALENDLY
+    : "No open slots right now. Offer: " + CONFIG.CALENDLY;
 
   var userPrompt;
   var tools;
   var toolChoice = "any";
 
   if (opts.mode === "new") {
-    tools = [LEAD_TOOLS[0]]; // reply_to_lead only - never book on first contact
+    tools = [LEAD_TOOLS[0]]; // reply_to_lead only — never book on first contact
     userPrompt =
       "Write the first reply to this inbound lead using the reply_to_lead tool.\n\n" +
       "Brand: " + opts.brand + "\nLead name: " + (opts.leadName || "there") +
       "\nInterest: " + (opts.classification.service_interest || "their inquiry") +
-      "\nExternal timezone label to use: " + target.nice + "\n\n" +
+      "\nTimezone to use: " + target.nice + "\n\n" +
       slotBlock + "\n\n" +
       "Their message:\n" + opts.body.substring(0, 1400) + "\n\n" +
       "Max 90 words before the sign-off. 2 short paragraphs max before slots.";
+
   } else {
     tools = LEAD_TOOLS; // reply_to_lead + book_meeting
-    var calNote = opts.offeredTime
-      ? "Lead mentioned availability: \"" + opts.offeredTime + "\". Match this against the coded slots below. If it clearly maps to one of them, confirm and call book_meeting. If it is vague (e.g. 'next week', 'mornings', a range) or doesn't match a coded slot exactly, just reply offering the slots below.\n"
-      : "Lead has NOT confirmed a specific slot yet. Just reply with the available slots and invite them to pick one. Do NOT call book_meeting.\n";
+
+    var contextBlock = opts.threadContext
+      ? "Conversation so far (oldest first):\n" + opts.threadContext + "\n\n"
+      : "";
+
+    var bookingInstruction;
+    if (opts.offeredTime) {
+      bookingInstruction =
+        "Lead mentioned: \"" + opts.offeredTime + "\".\n" +
+        "If this maps to one of the coded slots (same day, close enough time), call book_meeting with that slot.\n" +
+        "If it is genuinely vague (e.g. 'mornings', 'next week', a day range), just offer the slots again.\n";
+    } else {
+      // No specific time — but check for booking intent words like "I agree",
+      // "send me the invite", "let's do it", "confirmed", "that works for me".
+      bookingInstruction =
+        "Lead has not specified an exact time. HOWEVER: if the lead clearly agrees to one of the slots " +
+        "previously offered in this conversation (e.g. says 'I agree', 'that works', 'send the invite', " +
+        "'confirmed', 'let's do it', 'sounds good') — pick the slot they were most recently offered and " +
+        "call book_meeting for it. If the intent is genuinely ambiguous, just offer the slots again.\n";
+    }
 
     userPrompt =
       "A lead replied. Write a helpful response using the reply_to_lead tool.\n\n" +
-      "Brand: " + opts.brand + " | Lead: " + (opts.leadName || "there") + " | Timezone label: " + target.nice + "\n" +
-      calNote + slotBlock + "\n\n" +
-      "Their message:\n" + opts.body.substring(0, 1400) + "\n\n" +
-      "Keep it warm and brief. Only call book_meeting if the lead has clearly confirmed one of the exact coded slots above — not for vague availability or general availability offers. " +
-      "Max 85 words before sign-off. Max 3 short paragraphs.";
+      "Brand: " + opts.brand + " | Lead: " + (opts.leadName || "there") + " | Timezone: " + target.nice + "\n\n" +
+      contextBlock +
+      bookingInstruction + "\n" +
+      slotBlock + "\n\n" +
+      "Their latest message:\n" + opts.body.substring(0, 1400) + "\n\n" +
+      "Keep it warm and brief. Max 85 words before sign-off.";
   }
 
   var fallback = {
@@ -164,7 +219,7 @@ function draftLeadReply(opts) {
     var result = callClaudeTools(userPrompt, tools, system, "claude-sonnet-4-6", toolChoice);
 
     var replyCall = result.toolCalls.filter(function(c) { return c.name === "reply_to_lead"; })[0];
-    var bookCall = result.toolCalls.filter(function(c) { return c.name === "book_meeting"; })[0];
+    var bookCall  = result.toolCalls.filter(function(c) { return c.name === "book_meeting"; })[0];
 
     if (!replyCall || !replyCall.input || !replyCall.input.body) {
       throw new Error("reply_to_lead tool did not return usable input");
@@ -215,6 +270,7 @@ function generateFollowUp(data, num) {
   try { return stripMarkdown(callClaude(prompt, "claude-haiku-4-5-20251001")); }
   catch(e) { return "Hi, just following up on my previous email. If it is useful to compare notes, you can book here: " + CONFIG.CALENDLY + "\n\nSarah | " + data.brand; }
 }
+
 function extractOfferedTime(body) {
   var prompt =
     "Does this email confirm a SPECIFIC meeting time with a real date and clock time (e.g. 'Tuesday at 3pm', 'July 8 at 10am ET')? " +
@@ -226,6 +282,7 @@ function extractOfferedTime(body) {
     return (r.toLowerCase() === "none" || r.length < 4) ? null : r;
   } catch(e) { return null; }
 }
+
 function updateLeadStatus(email, status, note) {
   try {
     if (!email) return;
