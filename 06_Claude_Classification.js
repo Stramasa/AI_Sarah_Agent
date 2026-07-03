@@ -118,11 +118,21 @@ function callClaude(userPrompt, model, systemPrompt) {
 // payload and returns the tool_use blocks instead of raw text. This is a
 // standard Messages API feature, not a separate Anthropic "agent" product.
 //
-// toolChoice: "auto" (Claude may or may not call a tool), "any" (Claude
-// must call at least one of the provided tools, but may call several).
+// toolChoice: "auto" (Claude may or may not call a tool),
+//             "any"  (Claude must call at least one of the provided tools),
+//             { type: "tool", name: "X" } (Claude must call tool X, may also call others).
 function callClaudeTools(userPrompt, tools, systemPrompt, model, toolChoice) {
   model = model || "claude-sonnet-4-6";
-  toolChoice = toolChoice || "auto";
+
+  // Accept a string shorthand or a raw object for tool_choice.
+  var toolChoiceObj;
+  if (!toolChoice || toolChoice === "auto") {
+    toolChoiceObj = { type: "auto" };
+  } else if (typeof toolChoice === "string") {
+    toolChoiceObj = { type: toolChoice };
+  } else {
+    toolChoiceObj = toolChoice; // caller passed a full object e.g. { type: "tool", name: "reply_to_lead" }
+  }
 
   if (!CONFIG.CLAUDE_API_KEY || CONFIG.CLAUDE_API_KEY === "PASTE_CLAUDE_API_KEY_HERE") {
     throw new Error("Missing CLAUDE_API_KEY Script Property");
@@ -130,10 +140,10 @@ function callClaudeTools(userPrompt, tools, systemPrompt, model, toolChoice) {
 
   var payload = {
     model: model,
-    max_tokens: 1200,
+    max_tokens: 1500,
     messages: [{ role: "user", content: userPrompt }],
     tools: tools,
-    tool_choice: { type: toolChoice }
+    tool_choice: toolChoiceObj
   };
 
   if (systemPrompt) payload.system = systemPrompt;

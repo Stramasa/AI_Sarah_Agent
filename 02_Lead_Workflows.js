@@ -184,7 +184,10 @@ function draftLeadReply(opts) {
 
   var userPrompt;
   var tools;
-  var toolChoice = "any";
+  // For new leads: force reply_to_lead (never book on first contact).
+  // For replies: also force reply_to_lead — Claude may additionally call
+  // book_meeting in the same turn, but a reply email is always required.
+  var toolChoice = { type: "tool", name: "reply_to_lead" };
 
   if (opts.mode === "new") {
     tools = [LEAD_TOOLS[0]]; // reply_to_lead only — never book on first contact
