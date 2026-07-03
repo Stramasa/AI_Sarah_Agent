@@ -12,8 +12,9 @@
 // ============================================================
 
 var CONFIG = {
+  //AGENT_ID: "agent_01FN653PxKHCXnAKWAs6eqvn",  Replace with actual ID from console -- currently no longer used
   // Safer: store this in Apps Script Project Settings > Script Properties as CLAUDE_API_KEY.
-  CLAUDE_API_KEY:  PropertiesService.getScriptProperties().getProperty("CLAUDE_API_KEY") || "PASTE_CLAUDE_API_KEY_HERE",
+  CLAUDE_API_KEY:  PropertiesService.getScriptProperties().getProperty("CLAUDE_API_KEY"),
   FROM_NAME:       "Sarah Mitchell",
   FROM_EMAIL:      "sarah@stramasa.com",
   MANAGER:         "pepijn@stramasa.com",
@@ -27,6 +28,7 @@ var CONFIG = {
   CALENDAR_ID:     "stramasapro@gmail.com",
   CALENDAR_TZ:     "Asia/Manila",
   CALENDAR_DAYS:   10,
+  TEAM_CC:         ["pepijn@stramasa.com", "sang@stramasa.com", "eimee@stramasa.com"],
   FORWARDERS:      ["requests@stramasa.com", "groupleads@stramasa.com"],
   FOLLOW_UP_1_HOURS: 48,
   FOLLOW_UP_2_HOURS: 96,

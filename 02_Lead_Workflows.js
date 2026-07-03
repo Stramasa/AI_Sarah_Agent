@@ -13,11 +13,21 @@ function handleNewLead(thread, msg, classification, brand, memory) {
   }
 
   var tzRegion = detectTimezoneRegion(body + " " + from + " " + leadEmail);
-  var slots = getAvailableSlots(tzRegion);
-  var replySubject = generateSubjectLine(classification, brand, body);
-  var replyBody = generateLeadReply(classification, brand, body, slots, tzRegion, memory);
+  var slotsDetailed = getAvailableSlotsDetailed(tzRegion);
 
-  sendEmail({ to: leadEmail, subject: replySubject, body: replyBody, bcc: CONFIG.MANAGER });
+  var drafted = draftLeadReply({
+    mode: "new",
+    classification: classification,
+    brand: brand,
+    leadName: leadName,
+    leadEmail: leadEmail,
+    body: body,
+    slotsDetailed: slotsDetailed,
+    tzRegion: tzRegion,
+    memory: memory
+  });
+
+  sendEmail({ to: leadEmail, subject: drafted.subject, body: drafted.body, bcc: CONFIG.MANAGER });
 
   appendObjectRow("Leads", {
     "Date": isoNow(),
@@ -45,6 +55,7 @@ function handleNewLead(thread, msg, classification, brand, memory) {
   updateMemoryBrief("LEAD", "New lead " + leadName + " <" + leadEmail + "> for " + brand + ": " + (classification.service_interest || "unspecified service"));
   logAction(from, subject, "lead", "replied", "", leadEmail, "Initial reply sent with coded calendar slots");
 }
+
 function handleLeadReply(thread, memory) {
   var messages = thread.getMessages();
   var lastMsg = messages[messages.length - 1];
@@ -63,69 +74,129 @@ function handleLeadReply(thread, memory) {
   var name = data.leadName || "";
   var tzRegion = detectTimezoneRegion(body + " " + from + " " + replyToEmail);
   var offeredTime = extractOfferedTime(body);
-  var slots = getAvailableSlots(tzRegion);
+  var slotsDetailed = getAvailableSlotsDetailed(tzRegion);
 
-  var replyText = generateLeadContextualReply(body, subject, brand, name, offeredTime, slots, tzRegion, memory);
-  sendEmail({ to: replyToEmail, subject: subjectWithRe(subject), body: replyText, bcc: CONFIG.MANAGER });
+  var drafted = draftLeadReply({
+    mode: "reply",
+    brand: brand,
+    leadName: name,
+    leadEmail: replyToEmail,
+    body: body,
+    slotsDetailed: slotsDetailed,
+    tzRegion: tzRegion,
+    offeredTime: offeredTime,
+    memory: memory
+  });
+
+  sendReplyToMessage(lastMsg, drafted.body, { bcc: CONFIG.MANAGER });
 
   if (data.threadId) {
     data.replied = true;
     props.setProperty(key, JSON.stringify(data));
   }
 
-  updateLeadStatus(replyToEmail, "replied", "Lead replied. Offered time: " + (offeredTime || "none"));
-  logAction(from, subject, "lead", "contextual_reply", "", replyToEmail, "Replied to lead reply");
-  updateMemoryBrief("REPLY", "Lead reply handled for " + replyToEmail + ". Offered time: " + (offeredTime || "none"));
+  if (drafted.booking) {
+    updateLeadStatus(replyToEmail, "booked", "Meeting booked: " + drafted.booking.start + " (event " + drafted.booking.eventId + ")");
+    logAction(from, subject, "lead", "meeting_booked", "", replyToEmail, "Calendar invite sent for " + drafted.booking.start + ". Guests: " + drafted.booking.guests.join(", "));
+    updateMemoryBrief("BOOKING", "Meeting booked for " + replyToEmail + " at " + drafted.booking.start);
+  } else {
+    updateLeadStatus(replyToEmail, "replied", "Lead replied. Offered time: " + (offeredTime || "none"));
+    logAction(from, subject, "lead", "contextual_reply", "", replyToEmail, "Replied to lead reply");
+    updateMemoryBrief("REPLY", "Lead reply handled for " + replyToEmail + ". Offered time: " + (offeredTime || "none"));
+  }
+
   thread.markRead();
 }
-function generateSubjectLine(classification, brand, body) {
-  var prompt =
-    "Write a short reply subject line for " + brand + ".\n" +
-    "Format: Topic | Name - Brand\n" +
-    "No markdown. No quotes.\n" +
-    "Name: " + (classification.name || "") + " Company: " + (classification.company || "") + " Service: " + (classification.service_interest || "") + "\n" +
-    "Snippet: " + body.substring(0, 250) + "\n\n" +
-    "Reply with ONLY the subject line.";
-  try { return callClaude(prompt, "claude-haiku-4-5-20251001").trim(); }
-  catch(e) { return "Following up | " + brand; }
-}
-function generateLeadReply(classification, brand, body, slots, tzRegion, memory) {
-  var name = classification.name || "there";
-  var service = classification.service_interest || "your inquiry";
-  var slotBlock = slots.length > 0
-    ? "A few times that work on our end:\n" + slots.map(function(s) { return s; }).join("\n") + "\n\nOr book directly: " + CONFIG.CALENDLY
-    : "You can book a time here: " + CONFIG.CALENDLY;
-  var target = TARGET_TZ[tzRegion] || TARGET_TZ.US;
-  var system = buildEmailSystem(memory, brand);
-  var user =
-    "Write the first reply to this inbound lead.\n\n" +
-    "Brand: " + brand + "\nLead name: " + name + "\nInterest: " + service + "\nExternal timezone label to use: " + target.nice + "\n\n" +
-    "Use the slot block below verbatim. Do not alter dates, weekdays, times, or timezone labels. Do not invent calendar availability.\n" +
-    slotBlock + "\n\n" +
-    "Their message:\n" + body.substring(0, 1400) + "\n\n" +
-    "Write ONLY the email body. Max 90 words before the sign-off. 2 short paragraphs max before slots. No bullets except the slot lines already provided. Plain text only.\n" +
-    "Sign off exactly: Sarah | " + brand;
-  return stripMarkdown(callClaude(user, "claude-sonnet-4-6", system));
-}
-function generateLeadContextualReply(body, subject, brand, name, offeredTime, slots, tzRegion, memory) {
-  var target = TARGET_TZ[tzRegion] || TARGET_TZ.US;
-  var calNote = "";
-  if (offeredTime) {
-    calNote = "Lead said they are available: " + offeredTime + "\n" +
-      "If their exact time is not clearly one of the available coded slots, do not confirm it as booked. Offer the nearest coded slot or Calendly.\n";
+
+// ---- Single tool-use call that drafts the lead email, and books a real
+// calendar invite if (and only if) the lead's message exactly confirms
+// one of the offered slots. Uses the reply_to_lead / book_meeting tools
+// from 10_Tool_Registry.js.
+function draftLeadReply(opts) {
+  var target = TARGET_TZ[opts.tzRegion] || TARGET_TZ.US;
+  var system = buildEmailSystem(opts.memory, opts.brand);
+  var slotLabels = opts.slotsDetailed.map(function(s) { return s.label; });
+
+  var slotBlock = slotLabels.length > 0
+    ? "Coded calendar slots, use verbatim, do not alter dates/weekdays/times/timezone labels, do not invent availability:\n" + slotLabels.join("\n") + "\n\nOr book directly: " + CONFIG.CALENDLY
+    : "No open coded slots right now. Offer: " + CONFIG.CALENDLY;
+
+  var userPrompt;
+  var tools;
+  var toolChoice = "any";
+
+  if (opts.mode === "new") {
+    tools = [LEAD_TOOLS[0]]; // reply_to_lead only - never book on first contact
+    userPrompt =
+      "Write the first reply to this inbound lead using the reply_to_lead tool.\n\n" +
+      "Brand: " + opts.brand + "\nLead name: " + (opts.leadName || "there") +
+      "\nInterest: " + (opts.classification.service_interest || "their inquiry") +
+      "\nExternal timezone label to use: " + target.nice + "\n\n" +
+      slotBlock + "\n\n" +
+      "Their message:\n" + opts.body.substring(0, 1400) + "\n\n" +
+      "Max 90 words before the sign-off. 2 short paragraphs max before slots.";
+  } else {
+    tools = LEAD_TOOLS; // reply_to_lead + book_meeting
+    var calNote = opts.offeredTime
+      ? "Lead said they are available: " + opts.offeredTime + ". If their exact time is not clearly one of the coded slots, do not confirm it as booked - offer the nearest coded slot or Calendly instead.\n"
+      : "";
+
+    userPrompt =
+      "A lead replied. Write a helpful response using the reply_to_lead tool.\n\n" +
+      "Brand: " + opts.brand + " | Lead: " + (opts.leadName || "there") + " | Timezone label: " + target.nice + "\n" +
+      calNote + slotBlock + "\n\n" +
+      "Their message:\n" + opts.body.substring(0, 1400) + "\n\n" +
+      "Move toward booking, but never claim a time is free unless it appears in the coded slots above. " +
+      "If - and only if - the lead has clearly and unambiguously confirmed one of the exact coded slots above, " +
+      "also call book_meeting with that exact slot text. If their confirmation is vague, partial, or doesn't match " +
+      "an offered slot exactly, do not call book_meeting - just reply asking them to pick one of the offered times. " +
+      "Max 85 words before sign-off. Max 3 short paragraphs.";
   }
-  var slotBlock = slots.length > 0 ? "Available coded slots, use verbatim if needed:\n" + slots.join("\n") : "";
-  var system = buildEmailSystem(memory, brand);
-  var user =
-    "A lead replied. Write a helpful human response.\n\n" +
-    "Brand: " + brand + " | Lead: " + (name || "there") + " | Timezone label: " + target.nice + "\n" +
-    calNote + slotBlock + "\n\n" +
-    "Their message:\n" + body.substring(0, 1400) + "\n\n" +
-    "Move toward booking, but never claim a time is free unless it appears in the coded slots above. Calendly: " + CONFIG.CALENDLY + "\n" +
-    "Max 85 words before sign-off. Max 3 short paragraphs. Plain text only. No markdown.\n" +
-    "Sign off exactly: Sarah | " + brand;
-  return stripMarkdown(callClaude(user, "claude-sonnet-4-6", system));
+
+  var fallback = {
+    subject: "Following up | " + opts.brand,
+    body: "Hi " + (opts.leadName || "there") + ",\n\nThanks for reaching out. You can book a time directly here: " + CONFIG.CALENDLY + "\n\nSarah | " + opts.brand,
+    booking: null
+  };
+
+  try {
+    var result = callClaudeTools(userPrompt, tools, system, "claude-sonnet-4-6", toolChoice);
+
+    var replyCall = result.toolCalls.filter(function(c) { return c.name === "reply_to_lead"; })[0];
+    var bookCall = result.toolCalls.filter(function(c) { return c.name === "book_meeting"; })[0];
+
+    if (!replyCall || !replyCall.input || !replyCall.input.body) {
+      throw new Error("reply_to_lead tool did not return usable input");
+    }
+
+    var out = {
+      subject: stripMarkdown(replyCall.input.subject || fallback.subject),
+      body: stripMarkdown(replyCall.input.body),
+      booking: null
+    };
+
+    if (bookCall && bookCall.input && bookCall.input.chosen_slot) {
+      var matchedSlot = findSlotByLabel(opts.slotsDetailed, bookCall.input.chosen_slot);
+
+      if (!matchedSlot) {
+        Logger.log("BOOKING SKIPPED: chosen_slot '" + bookCall.input.chosen_slot + "' did not match any offered slot for " + opts.leadEmail);
+      } else {
+        try {
+          var meetingTitle = bookCall.input.meeting_title || (opts.brand + " Intro Call - " + (opts.leadName || opts.leadEmail));
+          out.booking = createLeadMeeting(matchedSlot, meetingTitle, opts.leadEmail);
+        } catch (bookErr) {
+          Logger.log("BOOKING ERROR for " + opts.leadEmail + ": " + bookErr);
+        }
+      }
+    }
+
+    return out;
+  } catch (e) {
+    Logger.log("draftLeadReply error: " + e);
+    return fallback;
+  }
 }
+
 function generateFollowUp(data, num) {
   var tones = [
     "friendly and light, no pressure",

@@ -11,14 +11,14 @@ function handleClientEmail(thread, msg, memory) {
   var teamContext = getSheetContext("Team", 20);
   var pmContext = getSheetContext("PM", 30);
 
-  var action = determineClientPMAction(body, subject, clientData, teamContext, pmContext, memory);
+  var action = orchestrateClientEmail(body, subject, clientData, teamContext, pmContext, memory);
   var clientName = clientData ? clientData.clientName : (action.client || "Unknown");
 
-  updateClientDirectoryFromEmail(clientEmail, clientData, subject, action);
+  updateClientDirectoryFromEmail(clientEmail, clientData, subject, action, subject + " " + body);
   updatePMFromClientEmail(clientName, clientEmail, subject, action);
   maybeNotifyTeamOwner(clientName, clientData, action, subject, body, clientEmail);
 
-  if (action.escalate === true || action.action === "escalate") {
+  if (action.escalate === true) {
     handleUnsureEmail(
       thread,
       subject,
@@ -47,88 +47,91 @@ function handleClientEmail(thread, msg, memory) {
   thread.markRead();
 }
 
-function determineClientPMAction(body, subject, clientData, teamContext, pmContext, memory) {
+// ---- Tool-use orchestration ------------------------------------------
+// Claude is given three tools (log_client_update, notify_team_member,
+// escalate_to_manager) and picks any combination that fits - one call,
+// zero to three tools used. This replaces the old single fixed JSON
+// schema, which meant a new field (and new code to read it) for every
+// new kind of decision. Adding a new decision now just means adding a
+// new tool in 10_Tool_Registry.js, not a new if/else branch here.
+function orchestrateClientEmail(body, subject, clientData, teamContext, pmContext, memory) {
   var clientCtx = clientData ? JSON.stringify(clientData) : "Client not found in Client Directory.";
 
-  var prompt =
-    "You are Sarah, the internal operations coordinator for Stramasa.\n" +
-    "You are processing an EXISTING CLIENT email.\n" +
-    "Sarah NEVER replies to clients. She only updates internal tracking and coordinates the team.\n\n" +
+  var system =
+    "You are Sarah, the internal operations coordinator for Stramasa Group. " +
+    "You are processing an EXISTING CLIENT email. Sarah NEVER replies to clients - she only " +
+    "updates internal tracking and coordinates the team via the tools available to you.";
 
+  var userPrompt =
     "Client context:\n" + clientCtx + "\n\n" +
     "Team context:\n" + teamContext + "\n\n" +
     "PM context:\n" + pmContext + "\n\n" +
-    "Sarah memory:\n" + (memory || "").substring(0,2500) + "\n\n" +
-
+    "Sarah memory:\n" + (memory || "").substring(0, 2500) + "\n\n" +
     "Email subject:\n" + subject + "\n\n" +
-    "Email body:\n" + body.substring(0,2200) + "\n\n" +
+    "Email body:\n" + body.substring(0, 2200) + "\n\n" +
+    "Always call log_client_update at minimum. Only call notify_team_member if someone genuinely " +
+    "needs to do work - not for purely informational emails (thanks, acknowledged, received). " +
+    "Only call escalate_to_manager if ownership or responsibility is unclear, or the situation needs " +
+    "human judgment. You may call more than one tool if the situation calls for it.";
 
-    "Return ONLY valid JSON:\n" +
-    "{\"action\":\"log_only|add_next_action|update_project|escalate\",\"client\":\"\",\"project\":\"\",\"team_owner\":\"\",\"deadline\":\"\",\"next_action\":\"\",\"blocker\":\"\",\"summary\":\"\",\"internal_email_needed\":false,\"internal_email_reason\":\"\",\"internal_message\":\"\",\"escalate\":false,\"reason\":\"\"}\n\n" +
-
-    "Decision rules:\n" +
-    "- Sarah never replies to clients.\n" +
-    "- Decide what operational work needs to happen internally.\n" +
-    "- If the email is only informational (thanks, acknowledged, received, etc.) use log_only and internal_email_needed=false.\n" +
-    "- Only notify a team member if someone genuinely needs to do work.\n" +
-    "- Use Sang for operational execution, PM, scheduling, coordination and admin.\n" +
-    "- Use Eimee for creative work.\n" +
-    "- Use Pepijn only for strategy, pricing, scope, complaints, legal, finance or unclear ownership.\n" +
-    "- Escalate when ownership or responsibility is unclear.\n\n" +
-
-    "The summary field is ONLY for the PM spreadsheet.\n" +
-    "Keep it short (1 sentence).\n\n" +
-
-    "The internal_message is DIFFERENT.\n" +
-    "Write it as a professional internal email.\n" +
-    "Do NOT copy the client email.\n" +
-    "Instead:\n" +
-    "- greet the team member by first name\n" +
-    "- explain why you're emailing\n" +
-    "- mention which client this relates to\n" +
-    "- briefly reference the client's latest email\n" +
-    "- summarize the important decisions\n" +
-    "- finish with a short 'Action points:' section using bullet points\n" +
-    "- never exceed about 180 words\n" +
-    "- do NOT sound robotic\n" +
-    "- do NOT repeat the entire client email\n" +
-    "- write as an experienced project coordinator\n";
+  var defaults = {
+    action: "log_only",
+    client: (clientData && clientData.clientName) || "",
+    project: "",
+    team_owner: "",
+    deadline: "",
+    next_action: "",
+    blocker: "",
+    summary: "Client email logged",
+    escalate: false,
+    reason: ""
+  };
 
   try {
-
-    var result = JSON.parse(cleanJson(callClaude(prompt,"claude-haiku-4-5-20251001")));
-
-    if(result.internal_email_needed!==true)
-      result.internal_email_needed=false;
-
-    if(!result.summary)
-      result.summary="Client email processed.";
-
-    if(!result.reason)
-      result.reason="Client workflow processed.";
-
-    return result;
-
-  } catch(e){
-
-    Logger.log("determineClientPMAction error: "+e);
-
-    return{
-      action:"log_only",
-      client:"",
-      project:"",
-      team_owner:"",
-      deadline:"",
-      next_action:"",
-      blocker:"",
-      summary:"Client email logged",
-      internal_email_needed:false,
-      internal_email_reason:"",
-      internal_message:"",
-      escalate:false,
-      reason:"Client PM action parser failed: "+e
-    };
+    var result = callClaudeTools(userPrompt, CLIENT_TOOLS, system, "claude-haiku-4-5-20251001", "any");
+    return mergeClientToolCalls(result.toolCalls, defaults);
+  } catch (e) {
+    Logger.log("orchestrateClientEmail error: " + e);
+    defaults.reason = "Client PM orchestration failed: " + e;
+    return defaults;
   }
+}
+
+// Folds the (0-3) tool calls Claude made into one action object shaped
+// the way updateClientDirectoryFromEmail / updatePMFromClientEmail /
+// maybeNotifyTeamOwner already expect, so those three functions in
+// 03/04 don't need to change at all.
+function mergeClientToolCalls(toolCalls, defaults) {
+  var action = Object.assign({}, defaults);
+
+  (toolCalls || []).forEach(function(call) {
+    if (call.name === "log_client_update") {
+      var i = call.input || {};
+      action.action = i.action_type || action.action;
+      action.client = i.client_name || action.client;
+      action.project = i.project || action.project;
+      action.team_owner = i.team_owner || action.team_owner;
+      action.deadline = i.deadline || action.deadline;
+      action.next_action = i.next_action || action.next_action;
+      action.blocker = i.blocker || action.blocker;
+      action.summary = i.summary || action.summary;
+    }
+
+    if (call.name === "notify_team_member") {
+      var n = call.input || {};
+      action.internal_email_needed = true;
+      if (n.owner_name) action.team_owner = n.owner_name;
+      action.internal_email_reason = n.reason || "";
+    }
+
+    if (call.name === "escalate_to_manager") {
+      var esc = call.input || {};
+      action.escalate = true;
+      action.reason = esc.reason || action.reason;
+    }
+  });
+
+  return action;
 }
 
 function findClientInDirectory(email) {
@@ -253,13 +256,14 @@ function buildClientDirectoryObject(row, map, rowNum) {
   };
 }
 
-function updateClientDirectoryFromEmail(email, clientData, subject, action) {
+function updateClientDirectoryFromEmail(email, clientData, subject, action, sourceText) {
   var sheet = getSheet("Client Directory");
   if (!sheet) return;
 
   var headers = getHeaders(sheet);
   var map = headerMap(headers);
   var rowNum = clientData && clientData.row ? clientData.row : null;
+  var inferredTz = guessTimezoneLabel((sourceText || "") + " " + (email || ""));
 
   if (!rowNum) {
     appendObjectRow("Client Directory", {
@@ -269,7 +273,7 @@ function updateClientDirectoryFromEmail(email, clientData, subject, action) {
       "Email": isInternalEmail(email) ? "" : email,
       "Known Emails": isInternalEmail(email) ? "" : email,
       "Aliases": "",
-      "Timezone": "",
+      "Timezone": inferredTz,
       "Status": "active?",
       "Priority": "",
       "Notes": "",
@@ -288,11 +292,26 @@ function updateClientDirectoryFromEmail(email, clientData, subject, action) {
   setByHeader(sheet, rowNum, map, "Last Email DateTime", isoNow());
   setByHeader(sheet, rowNum, map, "Sarah Action", action.action || "logged");
 
-  if (email && !isInternalEmail(email) && map["Known Emails"] !== undefined) {
-    var oldKnown = getByHeader(sheet, rowNum, map, "Known Emails") || "";
-    if (oldKnown.toLowerCase().indexOf(email.toLowerCase()) === -1) {
-      setByHeader(sheet, rowNum, map, "Known Emails", oldKnown ? oldKnown + ", " + email : email);
+  // Fill gaps only - never overwrite a value that's already there.
+  if (email && !isInternalEmail(email)) {
+    if (map["Email"] !== undefined && !getByHeader(sheet, rowNum, map, "Email")) {
+      setByHeader(sheet, rowNum, map, "Email", email);
     }
+
+    if (map["Known Emails"] !== undefined) {
+      var oldKnown = getByHeader(sheet, rowNum, map, "Known Emails") || "";
+      if (oldKnown.toLowerCase().indexOf(email.toLowerCase()) === -1) {
+        setByHeader(sheet, rowNum, map, "Known Emails", oldKnown ? oldKnown + ", " + email : email);
+      }
+    }
+  }
+
+  if (map["Company"] !== undefined && !getByHeader(sheet, rowNum, map, "Company") && action.client) {
+    setByHeader(sheet, rowNum, map, "Company", action.client);
+  }
+
+  if (map["Timezone"] !== undefined && !getByHeader(sheet, rowNum, map, "Timezone") && inferredTz) {
+    setByHeader(sheet, rowNum, map, "Timezone", inferredTz);
   }
 
   if (action.next_action) {
@@ -311,6 +330,19 @@ function updateClientDirectoryFromEmail(email, clientData, subject, action) {
     var oldNotes = getByHeader(sheet, rowNum, map, notesHeader) || "";
     var newNote = isoNow() + ": " + action.summary;
     setByHeader(sheet, rowNum, map, notesHeader, oldNotes ? oldNotes + "\n" + newNote : newNote);
+  }
+}
+
+// Reuses the existing timezone-region detector (07_Calendar_Timezone.js)
+// and turns it into a short human label for the sheet, e.g. "ET (US)".
+function guessTimezoneLabel(text) {
+  try {
+    var region = detectTimezoneRegion(text || "");
+    var target = TARGET_TZ[region];
+    if (!target) return "";
+    return target.label + " (" + region + ")";
+  } catch (e) {
+    return "";
   }
 }
 

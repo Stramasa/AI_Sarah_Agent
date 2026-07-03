@@ -1,4 +1,17 @@
+// Public, backward-compatible: returns just the display labels, same as before.
+// Used by anything that only needs the text (email drafting, tests).
 function getAvailableSlots(tzRegion) {
+  return computeAvailableSlotsDetailed(tzRegion).map(function(s) { return s.label; });
+}
+
+// New: returns the full slot objects {label, start, end} with real Date
+// objects, so a confirmed slot can actually be booked on the calendar
+// instead of only being offered as text.
+function getAvailableSlotsDetailed(tzRegion) {
+  return computeAvailableSlotsDetailed(tzRegion);
+}
+
+function computeAvailableSlotsDetailed(tzRegion) {
   try {
     var cal = CalendarApp.getCalendarById(CONFIG.CALENDAR_ID);
     if (!cal) return [];
@@ -88,11 +101,14 @@ if (tzRegion === "US") {
 
           if (!usedDays[dayKey]) {
             usedDays[dayKey] = true;
-            slots.push(
-              Utilities.formatDate(cursor, target.zone, "EEE d MMM 'at' h:mma") +
-              " " +
-              target.label
-            );
+            slots.push({
+              label:
+                Utilities.formatDate(cursor, target.zone, "EEE d MMM 'at' h:mma") +
+                " " +
+                target.label,
+              start: new Date(cursor.getTime()),
+              end: new Date(slotEndMs)
+            });
           }
         }
 
@@ -100,7 +116,7 @@ if (tzRegion === "US") {
       }
 
       if (slots.length > 0) {
-        Logger.log("CALENDAR slots for " + tzRegion + " using " + pass.name + ": " + slots.join(" | "));
+        Logger.log("CALENDAR slots for " + tzRegion + " using " + pass.name + ": " + slots.map(function(s){return s.label;}).join(" | "));
         return slots;
       }
     }
@@ -113,7 +129,95 @@ if (tzRegion === "US") {
   }
 }
 
+// Creates and sends the actual Google Calendar invite on the shared
+// stramasapro calendar. Because Sarah has write access to that calendar
+// (not her own), the event is created directly on it, so stramasapro
+// is the organizer - not sarah.stramasa@gmail.com. Internal team is
+// cc'd via CONFIG.TEAM_CC, plus the lead as the external guest.
+function createLeadMeeting(slot, meetingTitle, leadEmail) {
+  var cal = CalendarApp.getCalendarById(CONFIG.CALENDAR_ID);
+  if (!cal) throw new Error("Calendar not found or not accessible: " + CONFIG.CALENDAR_ID);
+  if (!slot || !slot.start || !slot.end) throw new Error("Invalid slot passed to createLeadMeeting");
+  if (!leadEmail) throw new Error("No lead email to invite");
+
+  var guestList = CONFIG.TEAM_CC.slice();
+  if (guestList.indexOf(leadEmail) === -1) guestList.push(leadEmail);
+
+  var event = cal.createEvent(
+    meetingTitle || "Stramasa Introductory Call",
+    slot.start,
+    slot.end,
+    {
+      guests: guestList.join(","),
+      sendInvites: true,
+      description: "Scheduled by Sarah. Lead: " + leadEmail
+    }
+  );
+
+  return {
+    eventId: event.getId(),
+    start: slot.start,
+    end: slot.end,
+    guests: guestList
+  };
+}
+
+// Finds the exact slot object matching a label Claude returned, so we
+// never trust Claude's text alone to determine the real meeting time.
+// Exact match first, then a loose trimmed/case-insensitive fallback.
+function findSlotByLabel(slotsDetailed, chosenLabel) {
+  if (!chosenLabel) return null;
+
+  var exact = slotsDetailed.filter(function(s) { return s.label === chosenLabel; });
+  if (exact.length > 0) return exact[0];
+
+  var loose = String(chosenLabel).trim().toLowerCase();
+  var fuzzy = slotsDetailed.filter(function(s) { return s.label.trim().toLowerCase() === loose; });
+  return fuzzy.length > 0 ? fuzzy[0] : null;
+}
+
+// Public entry point - tries Claude first (understands "sender's own
+// location" vs "markets they mentioned serving"), falls back to the
+// keyword cascade only if the API call fails. The old cascade alone is
+// what caused a US sender who mentioned "Western Europe" as a target
+// market to get misread as EU - keyword order can't tell direction,
+// Claude can.
 function detectTimezoneRegion(text) {
+  try {
+    var region = detectTimezoneRegionClaude(text);
+    if (region && TARGET_TZ[region]) return region;
+  } catch (e) {
+    Logger.log("detectTimezoneRegionClaude failed, falling back to keyword heuristic: " + e);
+  }
+  return detectTimezoneRegionHeuristic(text);
+}
+
+function detectTimezoneRegionClaude(text) {
+  var prompt =
+    "Identify where the SENDER of this email is physically based - not markets, regions, or clients they mention serving or targeting.\n\n" +
+    "Look for direct self-identification: phrases like 'we are based in', 'headquartered in', 'U.S.-based', phone country codes, " +
+    "addresses, or explicit statements about the sender's own company location.\n\n" +
+    "If the sender mentions regions they sell to, serve, or target (e.g. 'our primary markets are North America and Western Europe'), " +
+    "that describes their MARKETS, not their location. Do not use market/target mentions to determine the sender's own timezone " +
+    "unless there is truly no other location signal anywhere in the text.\n\n" +
+    "Return ONLY one of these exact codes for where the sender is located:\n" +
+    "US, EU, IN, SG, JP, AU, SEA, ME\n" +
+    "(SEA = Philippines/Vietnam/Thailand/Indonesia/Malaysia, ME = Middle East/Gulf)\n" +
+    "If genuinely unclear, return US.\n" +
+    "Reply with ONLY the code, nothing else, no punctuation.\n\n" +
+    "Email text:\n" + (text || "").substring(0, 1500);
+
+  var raw = callClaude(prompt, "claude-haiku-4-5-20251001").trim().toUpperCase();
+  var match = raw.match(/\b(US|EU|IN|SG|JP|AU|SEA|ME)\b/);
+  return match ? match[1] : null;
+}
+
+// Original keyword-order cascade, kept only as an offline fallback in
+// case the Claude call errors out (rate limit, missing key, etc). This
+// alone is not reliable for anything beyond simple, unambiguous cases -
+// that is exactly the kind of judgment call that belongs to Claude, not
+// to a fixed if/else keyword order.
+function detectTimezoneRegionHeuristic(text) {
   var t = normalizeForTimezoneDetection(text);
 
   // 1. Strong APAC country/city signals first, because these are often explicit.

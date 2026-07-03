@@ -46,14 +46,35 @@ function maybeNotifyTeamOwner(clientName, clientData, action, subject, body, cli
     return;
   }
 
-var message = buildInternalTeamMessage(owner.name, clientName, action, subject, body, clientEmail);
+  var message = buildInternalTeamMessage(owner.name, clientName, action, subject, body, clientEmail);
 
-  sendEmail({
+  // NEW: Build CC list with project owner logic
+  var ccList = [];
+  var projectOwnerName = resolveProjectOwner(clientName, clientData, action);
+  
+  if (projectOwnerName && projectOwnerName.trim().length > 0) {
+    // Only CC the project owner if they are NOT the person being notified
+    if (projectOwnerName !== owner.name) {
+      var projectOwnerData = findTeamMemberByName(projectOwnerName);
+      if (projectOwnerData && projectOwnerData.email && isInternalEmail(projectOwnerData.email)) {
+        ccList.push(projectOwnerData.email);
+      }
+    }
+  }
+
+  var emailParams = {
     to: owner.email,
     subject: "Sarah update: " + (clientName || "Client") + " - " + (action.project || subject || "Client email"),
     body: message,
     bcc: CONFIG.MANAGER
-  });
+  };
+
+  // Only add CC if there are people to CC
+  if (ccList.length > 0) {
+    emailParams.cc = ccList.join(",");
+  }
+
+  sendEmail(emailParams);
 
   logAction(
     clientEmail || "",
@@ -61,7 +82,7 @@ var message = buildInternalTeamMessage(owner.name, clientName, action, subject, 
     "client",
     "internal_team_notified",
     clientName || "",
-    "Internal notification sent to " + owner.name + ".",
+    "Internal notification sent to " + owner.name + (ccList.length > 0 ? " (CC: " + ccList.join(", ") + ")" : "") + ".",
     owner.email,
     action.internal_email_reason || action.reason || "Sarah routed client/PM update to project owner."
   );

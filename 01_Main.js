@@ -9,17 +9,17 @@ function checkLeads() {
 
   rescueForwardedLeadsFromSpam();
 
-  var threads = GmailApp.search("is:unread -label:" + CONFIG.LABEL_PROCESSED, 0, 20);
+  var threads = GmailApp.search("is:unread", 0, 20);
   Logger.log("THREADS FOUND: " + threads.length);
   if (threads.length === 0) return;
 
   threads.forEach(function(thread) {
     var messages = thread.getMessages();
-    var firstMsg = messages[0];
-    var subject = firstMsg.getSubject() || "";
-    var from = firstMsg.getFrom() || "";
-    var to = firstMsg.getTo() || "";
-    var firstBody = firstMsg.getPlainBody() || "";
+    var activeMsg = messages[messages.length - 1]; // react to the newest message, not the thread's first
+    var subject = activeMsg.getSubject() || "";
+    var from = activeMsg.getFrom() || "";
+    var to = activeMsg.getTo() || "";
+    var activeBody = activeMsg.getPlainBody() || "";
     var threadId = thread.getId();
     var fromEmail = extractEmail(from);
 
@@ -31,27 +31,43 @@ function checkLeads() {
       return;
     }
 
-    if (isBounceEmail(subject, firstBody, from)) {
-      handleBounceEmail(thread, subject, firstBody, from);
+    if (isBounceEmail(subject, activeBody, from)) {
+      handleBounceEmail(thread, subject, activeBody, from);
       sessionLog.push("Bounce flagged to manager: " + subject);
       thread.addLabel(processedLabel);
       return;
     }
 
-    if (isCalendlyConfirmation(subject, from, firstBody)) {
-      handleCalendlyConfirmation(thread, subject, firstBody, from);
+    if (isCalendlyConfirmation(subject, from, activeBody)) {
+      handleCalendlyConfirmation(thread, subject, activeBody, from);
       sessionLog.push("Calendly confirmation logged without reply: " + subject);
       thread.addLabel(processedLabel);
       return;
     }
 
-    var possibleClient = findClientInDirectorySmart(fromEmail, subject, firstBody);
+    // If this is from a known forwarder (requests@ / groupleads@), classify
+    // and log using the real external sender extracted from the body, not
+    // the forwarder's own address.
+    var classifyFrom = from;
+    var classifyEmail = fromEmail;
+
+    if (isKnownForwarder(fromEmail)) {
+      Logger.log("Detected forward from known forwarder: " + fromEmail);
+      var realSender = analyzeEmailSender(subject, activeBody, from);
+      if (realSender && realSender.replyTo && !isInternalEmail(realSender.replyTo)) {
+        classifyEmail = realSender.replyTo;
+        classifyFrom = realSender.replyTo;
+        Logger.log("Extracted real sender: " + classifyEmail);
+      }
+    }
+
+    var possibleClient = findClientInDirectorySmart(classifyEmail, subject, activeBody);
 
     if (possibleClient) {
       Logger.log("PRE-CLASSIFY: matched known client, routing to client workflow");
 
       try {
-        handleClientEmail(thread, firstMsg, buildSarahContext("client", firstBody, instructions, knowledge));
+        handleClientEmail(thread, activeMsg, buildSarahContext("client", activeBody, instructions, knowledge));
         sessionLog.push("Known client email processed: " + subject);
 
         logAction(
@@ -61,7 +77,7 @@ function checkLeads() {
           "pre_classify_client_match",
           possibleClient.clientName || "",
           "Matched Client Directory before Claude classification.",
-          possibleClient.email || fromEmail,
+          possibleClient.email || classifyEmail,
           "Known client match found in Client Directory."
         );
       } catch(e) {
@@ -70,7 +86,7 @@ function checkLeads() {
         handleUnsureEmail(
           thread,
           subject,
-          firstBody,
+          activeBody,
           from,
           "Known client match but client handler failed: " + e
         );
@@ -82,7 +98,7 @@ function checkLeads() {
           "error_escalated",
           possibleClient.clientName || "",
           "Known client match but handler failed.",
-          possibleClient.email || fromEmail,
+          possibleClient.email || classifyEmail,
           String(e)
         );
       }
@@ -91,7 +107,7 @@ function checkLeads() {
       return;
     }
 
-    var classification = safeClassify(subject, firstBody, from);
+    var classification = safeClassify(subject, activeBody, classifyFrom);
     Logger.log("CLASSIFIED: " + JSON.stringify(classification));
 
     if (classification.type === "spam") {
@@ -106,7 +122,7 @@ function checkLeads() {
         "skipped",
         "",
         "Spam/system email skipped.",
-        fromEmail,
+        classifyEmail,
         classification.reason || ""
       );
 
@@ -125,14 +141,14 @@ function checkLeads() {
         "labeled",
         "",
         "Talent/applicant email ignored unless hiring request.",
-        fromEmail,
+        classifyEmail,
         classification.reason || "Classified as talent/application."
       );
 
       return;
     }
 
-    var brand = detectBrand(subject + " " + firstBody + " " + to);
+    var brand = detectBrand(subject + " " + activeBody + " " + to);
     var props = PropertiesService.getScriptProperties();
     var hasLeadRecord = props.getProperty(CONFIG.PROP_PREFIX + threadId) !== null;
 
@@ -143,31 +159,31 @@ function checkLeads() {
       "pending",
       "",
       "",
-      fromEmail,
+      classifyEmail,
       classification.reason || ""
     );
 
     try {
       if (messages.length > 1 && hasLeadRecord) {
-        handleLeadReply(thread, buildSarahContext("lead", firstBody, instructions, knowledge));
+        handleLeadReply(thread, buildSarahContext("lead", activeBody, instructions, knowledge));
         sessionLog.push("Known lead reply handled: " + subject);
 
       } else if (classification.type === "lead") {
         handleNewLead(
           thread,
-          firstMsg,
+          activeMsg,
           classification,
           brand,
-          buildSarahContext("lead", firstBody, instructions, knowledge)
+          buildSarahContext("lead", activeBody, instructions, knowledge)
         );
         sessionLog.push("New lead replied to: " + subject);
 
       } else if (classification.type === "client") {
-        handleClientEmail(thread, firstMsg, buildSarahContext("client", firstBody, instructions, knowledge));
+        handleClientEmail(thread, activeMsg, buildSarahContext("client", activeBody, instructions, knowledge));
         sessionLog.push("Client/PM email processed: " + subject);
 
       } else {
-        handleUnsureEmail(thread, subject, firstBody, from, "Classification unsure");
+        handleUnsureEmail(thread, subject, activeBody, from, "Classification unsure");
         sessionLog.push("Unsure email escalated: " + subject);
 
         logAction(
@@ -177,14 +193,14 @@ function checkLeads() {
           "manager_alerted",
           "",
           "Classification unsure. Escalated to manager.",
-          fromEmail,
+          classifyEmail,
           classification.reason || "Classifier returned unsure."
         );
       }
     } catch(e) {
       Logger.log("ERROR in handler: " + e);
 
-      handleUnsureEmail(thread, subject, firstBody, from, "Script error: " + e);
+      handleUnsureEmail(thread, subject, activeBody, from, "Script error: " + e);
       sessionLog.push("Error escalated: " + subject + " | " + e);
 
       logAction(
@@ -194,7 +210,7 @@ function checkLeads() {
         "error_escalated",
         "",
         "Script error during handler.",
-        fromEmail,
+        classifyEmail,
         String(e)
       );
     }
@@ -208,6 +224,18 @@ function checkLeads() {
   );
 
   Logger.log("=== checkLeads END ===");
+}
+
+// Returns true if the email came from one of the known internal forwarding
+// addresses (contact-form forwarders), meaning the real lead/client is
+// mentioned inside the body rather than in the From header.
+function isKnownForwarder(email) {
+  var needle = (email || "").toLowerCase().trim();
+  if (!needle) return false;
+
+  return CONFIG.FORWARDERS.some(function(f) {
+    return String(f || "").toLowerCase().trim() === needle;
+  });
 }
 
 function processFollowUps() {
@@ -241,12 +269,26 @@ function processFollowUps() {
     var num = data.followUpCount + 1;
     var body = generateFollowUp(data, num);
 
-    sendEmail({
-      to: data.leadEmail,
-      subject: subjectWithRe(data.subject),
-      body: body,
-      bcc: CONFIG.MANAGER
-    });
+    var repliedInThread = false;
+    try {
+      var followThread = GmailApp.getThreadById(data.threadId);
+      var followMsgs = followThread ? followThread.getMessages() : null;
+      if (followMsgs && followMsgs.length > 0) {
+        sendReplyToMessage(followMsgs[followMsgs.length - 1], body, { bcc: CONFIG.MANAGER });
+        repliedInThread = true;
+      }
+    } catch (threadErr) {
+      Logger.log("Follow-up reply-in-thread failed for " + data.leadEmail + ": " + threadErr);
+    }
+
+    if (!repliedInThread) {
+      sendEmail({
+        to: data.leadEmail,
+        subject: subjectWithRe(data.subject),
+        body: body,
+        bcc: CONFIG.MANAGER
+      });
+    }
 
     logAction(
       data.leadEmail,

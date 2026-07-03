@@ -39,6 +39,21 @@ function sendEmail(params) {
   if (params.cc) opts.cc = params.cc;
   GmailApp.sendEmail(params.to, params.subject, params.body, opts);
 }
+
+// Use this instead of sendEmail() whenever Sarah is continuing an
+// existing conversation (a lead reply, a follow-up). GmailApp.sendEmail()
+// composes a brand-new message with no In-Reply-To/References headers,
+// so even with a "Re:" subject Gmail (and the recipient's client) may
+// not thread it with the original conversation. sourceMsg.reply() sets
+// those headers correctly and replies to whoever actually sent that
+// message, keeping the full history visible in one thread.
+function sendReplyToMessage(sourceMsg, body, params) {
+  params = params || {};
+  var opts = { from: CONFIG.FROM_EMAIL, name: CONFIG.FROM_NAME };
+  if (params.bcc) opts.bcc = params.bcc;
+  if (params.cc) opts.cc = params.cc;
+  sourceMsg.reply(body, opts);
+}
 function isCalendlyConfirmation(subject, from, body) {
   var s = (subject || "").toLowerCase();
   var f = (from || "").toLowerCase();
