@@ -138,18 +138,15 @@ function draftLeadReply(opts) {
   } else {
     tools = LEAD_TOOLS; // reply_to_lead + book_meeting
     var calNote = opts.offeredTime
-      ? "Lead said they are available: " + opts.offeredTime + ". If their exact time is not clearly one of the coded slots, do not confirm it as booked - offer the nearest coded slot or Calendly instead.\n"
-      : "";
+      ? "Lead mentioned availability: \"" + opts.offeredTime + "\". Match this against the coded slots below. If it clearly maps to one of them, confirm and call book_meeting. If it is vague (e.g. 'next week', 'mornings', a range) or doesn't match a coded slot exactly, just reply offering the slots below.\n"
+      : "Lead has NOT confirmed a specific slot yet. Just reply with the available slots and invite them to pick one. Do NOT call book_meeting.\n";
 
     userPrompt =
       "A lead replied. Write a helpful response using the reply_to_lead tool.\n\n" +
       "Brand: " + opts.brand + " | Lead: " + (opts.leadName || "there") + " | Timezone label: " + target.nice + "\n" +
       calNote + slotBlock + "\n\n" +
       "Their message:\n" + opts.body.substring(0, 1400) + "\n\n" +
-      "Move toward booking, but never claim a time is free unless it appears in the coded slots above. " +
-      "If - and only if - the lead has clearly and unambiguously confirmed one of the exact coded slots above, " +
-      "also call book_meeting with that exact slot text. If their confirmation is vague, partial, or doesn't match " +
-      "an offered slot exactly, do not call book_meeting - just reply asking them to pick one of the offered times. " +
+      "Keep it warm and brief. Only call book_meeting if the lead has clearly confirmed one of the exact coded slots above — not for vague availability or general availability offers. " +
       "Max 85 words before sign-off. Max 3 short paragraphs.";
   }
 
@@ -215,7 +212,11 @@ function generateFollowUp(data, num) {
   catch(e) { return "Hi, just following up on my previous email. If it is useful to compare notes, you can book here: " + CONFIG.CALENDLY + "\n\nSarah | " + data.brand; }
 }
 function extractOfferedTime(body) {
-  var prompt = "Does this email mention a specific meeting time or availability? If yes, return it as plain text. If no, return exactly none.\n\nEmail:\n" + (body || "").substring(0, 700);
+  var prompt =
+    "Does this email confirm a SPECIFIC meeting time with a real date and clock time (e.g. 'Tuesday at 3pm', 'July 8 at 10am ET')? " +
+    "If yes, return it as plain text. " +
+    "If the email only mentions a vague availability like 'next week', 'mornings', 'anytime', or asks for your availability, return exactly: none\n\n" +
+    "Email:\n" + (body || "").substring(0, 700);
   try {
     var r = callClaude(prompt, "claude-haiku-4-5-20251001").trim();
     return (r.toLowerCase() === "none" || r.length < 4) ? null : r;

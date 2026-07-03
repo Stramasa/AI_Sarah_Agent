@@ -80,3 +80,66 @@ function extractCalendlyInfo(subject, body) {
   if (whenMatch) when = whenMatch[0];
   return { email: email, name: "", when: when };
 }
+
+// ---- Spam cleanup (run once per day on a separate trigger) ----------
+// Goes through the Gmail spam folder. For each thread:
+//   - If it looks like a real email (lead/client/legit), rescue it to inbox
+//     with label "RecoveredFromSpam".
+//   - Otherwise, trash it with label "SpamCleaned" (visible for 30 days).
+function cleanSpam() {
+  Logger.log("=== cleanSpam START ===");
+
+  var recoveredLabel = getOrCreateLabel("RecoveredFromSpam");
+  var cleanedLabel = getOrCreateLabel("SpamCleaned");
+  var spamThreads = GmailApp.search("in:spam -label:RecoveredFromSpam -label:SpamCleaned", 0, 50);
+
+  Logger.log("Spam threads to review: " + spamThreads.length);
+
+  spamThreads.forEach(function(thread) {
+    try {
+      var messages = thread.getMessages();
+      var msg = messages[messages.length - 1];
+      var subject = msg.getSubject() || "";
+      var body = msg.getPlainBody() || "";
+      var from = msg.getFrom() || "";
+
+      // Always rescue forwarded leads that got spam-filtered
+      var fromEmail = extractEmail(from);
+      if (isKnownForwarder(fromEmail) || isInternalForwarder(fromEmail)) {
+        thread.moveToInbox();
+        thread.addLabel(recoveredLabel);
+        Logger.log("Rescued forwarder email from spam: " + subject);
+        return;
+      }
+
+      // Ask Claude if this looks legit
+      var prompt =
+        "Is this a real email worth reading — a potential client, business contact, partner, or colleague?\n" +
+        "Or is it clearly automated spam, a newsletter, a vendor cold pitch, a phishing attempt, or a promotional message?\n\n" +
+        "Answer with only one word: LEGIT or SPAM\n\n" +
+        "From: " + from + "\nSubject: " + subject + "\nBody:\n" + body.substring(0, 800);
+
+      var verdict = "";
+      try {
+        verdict = callClaude(prompt, "claude-haiku-4-5-20251001").trim().toUpperCase();
+      } catch(e) {
+        Logger.log("cleanSpam Claude error: " + e);
+        verdict = "SPAM"; // safe default — don't rescue if uncertain
+      }
+
+      if (verdict.indexOf("LEGIT") !== -1) {
+        thread.moveToInbox();
+        thread.addLabel(recoveredLabel);
+        Logger.log("Recovered legit email from spam: " + subject + " | from: " + from);
+      } else {
+        thread.moveToTrash();
+        thread.addLabel(cleanedLabel);
+        Logger.log("Trashed spam: " + subject);
+      }
+    } catch(e) {
+      Logger.log("cleanSpam error on thread: " + e);
+    }
+  });
+
+  Logger.log("=== cleanSpam END ===");
+}

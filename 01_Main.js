@@ -48,11 +48,12 @@ function checkLeads() {
     // If this is from a known forwarder (requests@ / groupleads@), classify
     // and log using the real external sender extracted from the body, not
     // the forwarder's own address.
+    // Also handle internal team members forwarding external emails to Sarah.
     var classifyFrom = from;
     var classifyEmail = fromEmail;
 
-    if (isKnownForwarder(fromEmail)) {
-      Logger.log("Detected forward from known forwarder: " + fromEmail);
+    if (isKnownForwarder(fromEmail) || isInternalForwarder(fromEmail)) {
+      Logger.log("Detected forward from: " + fromEmail);
       var realSender = analyzeEmailSender(subject, activeBody, from);
       if (realSender && realSender.replyTo && !isInternalEmail(realSender.replyTo)) {
         classifyEmail = realSender.replyTo;
@@ -234,6 +235,17 @@ function isKnownForwarder(email) {
   if (!needle) return false;
 
   return CONFIG.FORWARDERS.some(function(f) {
+    return String(f || "").toLowerCase().trim() === needle;
+  });
+}
+
+// Returns true if the email is from a Stramasa team member who may be
+// forwarding an external lead/client email to Sarah.
+function isInternalForwarder(email) {
+  var needle = (email || "").toLowerCase().trim();
+  if (!needle) return false;
+
+  return (CONFIG.INTERNAL_TEAM || []).some(function(f) {
     return String(f || "").toLowerCase().trim() === needle;
   });
 }
