@@ -43,7 +43,7 @@ function sendEmail(params) {
 // Use this instead of sendEmail() whenever Sarah is continuing an
 // existing conversation (a lead reply, a follow-up). GmailApp.sendEmail()
 // composes a brand-new message with no In-Reply-To/References headers,
-// so even with a "Re:" subject Gmail (and the recipient's client) may
+// so even with a "Re:" subject Gmail (and the recipient's client) 
 // not thread it with the original conversation. sourceMsg.reply() sets
 // those headers correctly and replies to whoever actually sent that
 // message, keeping the full history visible in one thread.
