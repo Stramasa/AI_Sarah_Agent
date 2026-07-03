@@ -9,7 +9,8 @@ function handleCalendlyConfirmation(thread, subject, body, from) {
 function handleBounceEmail(thread, subject, body, from) {
   var bounced = extractBouncedRecipient(body) || "unknown recipient";
   sendEmail({
-    to: CONFIG.MANAGER,
+    to: CONFIG.ESCALATION_TO,
+    cc: CONFIG.ESCALATION_CC,
     subject: "Sarah bounce alert: " + bounced,
     body: "Hi,\n\nAn email appears to have bounced or failed delivery.\n\nBounced recipient: " + bounced + "\nFrom: " + from + "\nSubject: " + subject + "\n\nSnippet:\n" + body.substring(0, 1200) + "\n\nSarah"
   });
@@ -19,7 +20,8 @@ function handleBounceEmail(thread, subject, body, from) {
 }
 function handleUnsureEmail(thread, subject, body, from, reason) {
   sendEmail({
-    to: CONFIG.MANAGER,
+    to: CONFIG.ESCALATION_TO,
+    cc: CONFIG.ESCALATION_CC,
     subject: "Sarah unsure: " + subject,
     body: "Hi,\n\nI received an email I was not fully sure how to handle.\n\nReason: " + (reason || "Unclear") + "\nFrom: " + from + "\nSubject: " + subject + "\n\nSnippet:\n" + body.substring(0, 1200) + "\n\nSarah"
   });
@@ -35,8 +37,19 @@ function rescueForwardedLeadsFromSpam() {
 }
 function sendEmail(params) {
   var opts = { from: CONFIG.FROM_EMAIL, name: CONFIG.FROM_NAME };
-  if (params.bcc) opts.bcc = params.bcc;
+
+  // Merge caller-supplied BCC with ALWAYS_BCC so team visibility is guaranteed
+  // on every outbound email without the caller needing to remember to add it.
+  var bccSet = (CONFIG.ALWAYS_BCC || []).slice();
+  if (params.bcc) {
+    params.bcc.split(",").forEach(function(b) {
+      var t = b.trim();
+      if (t && bccSet.indexOf(t) === -1) bccSet.push(t);
+    });
+  }
+  if (bccSet.length) opts.bcc = bccSet.join(",");
   if (params.cc) opts.cc = params.cc;
+
   GmailApp.sendEmail(params.to, params.subject, params.body, opts);
 }
 
@@ -51,8 +64,17 @@ function sendEmail(params) {
 function sendReplyToMessage(sourceMsg, body, params) {
   params = params || {};
   var opts = { from: CONFIG.FROM_EMAIL, name: CONFIG.FROM_NAME };
-  if (params.bcc) opts.bcc = params.bcc;
-  if (params.cc)  opts.cc  = params.cc;
+
+  // Same ALWAYS_BCC merging as sendEmail — every outbound reply includes team BCC.
+  var bccSet = (CONFIG.ALWAYS_BCC || []).slice();
+  if (params.bcc) {
+    params.bcc.split(",").forEach(function(b) {
+      var t = b.trim();
+      if (t && bccSet.indexOf(t) === -1) bccSet.push(t);
+    });
+  }
+  if (bccSet.length) opts.bcc = bccSet.join(",");
+  if (params.cc) opts.cc = params.cc;
 
   // Append a quoted version of the message being replied to so the
   // recipient sees the context (standard email client behaviour).

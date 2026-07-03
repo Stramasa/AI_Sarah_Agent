@@ -118,7 +118,28 @@ function handleLeadReply(thread, memory) {
 
   if (data.threadId) {
     data.replied = true;
+    data.replyCount = (data.replyCount || 0) + 1;
     props.setProperty(key, JSON.stringify(data));
+  }
+
+  // After LEAD_ESCALATE_AFTER_ROUNDS back-and-forths with no booking,
+  // quietly notify Pepijn + Sang so a human can decide whether to step in.
+  var replyCount = data.replyCount || 1;
+  var threshold = CONFIG.LEAD_ESCALATE_AFTER_ROUNDS || 3;
+  if (!drafted.booking && replyCount >= threshold) {
+    try {
+      sendEmail({
+        to: CONFIG.ESCALATION_TO,
+        cc: CONFIG.ESCALATION_CC,
+        subject: "Lead update (" + replyCount + " rounds): " + subject,
+        body: "Hi,\n\nThis lead has gone back and forth " + replyCount + " times without booking a meeting. You may want to review or take over.\n\n" +
+              "Lead: " + replyToEmail + "\nSubject: " + subject + "\n\nLatest message:\n" + body.substring(0, 800) + "\n\nSarah"
+      });
+      logAction(from, subject, "lead", "escalated_to_team",
+        "", replyToEmail, "Escalated after " + replyCount + " rounds with no booking.");
+    } catch(escalErr) {
+      Logger.log("Escalation notify error: " + escalErr);
+    }
   }
 
   if (drafted.booking) {

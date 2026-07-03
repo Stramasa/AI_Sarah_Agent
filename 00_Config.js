@@ -18,12 +18,19 @@ var CONFIG = {
   FROM_NAME:       "Sarah Mitchell",
   FROM_EMAIL:      "sarah@stramasa.com",
   MANAGER:         "pepijn@stramasa.com",
+  // Always BCC'd on every outbound Sarah email (team visibility).
+  ALWAYS_BCC:      ["sang@stramasa.com"],
+  // Who receives escalations (difficult leads, unsure emails, bounces, errors).
+  ESCALATION_TO:   "pepijn@stramasa.com",
+  ESCALATION_CC:   "sang@stramasa.com",
+  // After this many lead reply rounds with no booking, notify the team.
+  LEAD_ESCALATE_AFTER_ROUNDS: 3,
   CALENDLY:        "https://calendly.com/stramasa-agency/30min",
     // Sarah Worksheet
   SHEET_ID:        "1D15TRhL92fgQqV1liNpRZCmWxTL6RzbDj3qiiXAplt4",
-  // Existing Sarah instructions Google Doc. 
+  // Existing Sarah instructions Google Doc.
   INSTRUCTIONS_FILE_ID: "1rCEUd8spBrEYHjCvChv8rvNYcAeOO7S3No-oLs2dbwc",
-  // Second Google Doc for Sarah Knowledge & Learning 
+  // Second Google Doc for Sarah Knowledge & Learning
   KNOWLEDGE_FILE_ID: PropertiesService.getScriptProperties().getProperty("KNOWLEDGE_FILE_ID") || "11eXz5pSWI5V_nKqGEvURFjp3XQQVZsQ-NvDXtq9TG4M",
   CALENDAR_ID:     "stramasapro@gmail.com",
   CALENDAR_TZ:     "Asia/Manila",
