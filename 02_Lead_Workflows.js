@@ -78,13 +78,26 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
 
 function handleLeadReply(thread, memory) {
   var messages = thread.getMessages();
-  var lastMsg = messages[messages.length - 1];
+  var threadId = thread.getId();
+
+  // Find the last message from the external lead — not Sarah, not internal team.
+  // This handles cases where Sarah's own reply is the most recent message.
+  var lastMsg = null;
+  for (var i = messages.length - 1; i >= 0; i--) {
+    var mEmail = extractEmail(messages[i].getFrom() || "");
+    if (mEmail !== CONFIG.FROM_EMAIL && !isInternalEmail(mEmail)) {
+      lastMsg = messages[i];
+      break;
+    }
+  }
+  if (!lastMsg) {
+    Logger.log("handleLeadReply: no external lead message in thread " + threadId + ", skipping");
+    return;
+  }
+
   var from = lastMsg.getFrom() || "";
   var body = lastMsg.getPlainBody() || "";
   var subject = lastMsg.getSubject() || "";
-  var threadId = thread.getId();
-
-  if (extractEmail(from) === CONFIG.FROM_EMAIL) return;
 
   var props = PropertiesService.getScriptProperties();
   var key = CONFIG.PROP_PREFIX + threadId;
@@ -101,18 +114,36 @@ function handleLeadReply(thread, memory) {
   // without this context Claude can't know what was previously offered.
   var threadContext = buildThreadContext(messages);
 
-  var drafted = draftLeadReply({
-    mode: "reply",
-    brand: brand,
-    leadName: name,
-    leadEmail: replyToEmail,
-    body: body,
-    threadContext: threadContext,
-    slotsDetailed: slotsDetailed,
-    tzRegion: tzRegion,
-    offeredTime: offeredTime,
-    memory: memory
-  });
+  var drafted;
+  try {
+    drafted = draftLeadReply({
+      mode: "reply",
+      brand: brand,
+      leadName: name,
+      leadEmail: replyToEmail,
+      body: body,
+      threadContext: threadContext,
+      slotsDetailed: slotsDetailed,
+      tzRegion: tzRegion,
+      offeredTime: offeredTime,
+      memory: memory
+    });
+  } catch(draftErr) {
+    Logger.log("handleLeadReply: draftLeadReply failed for " + replyToEmail + ": " + draftErr);
+    // Escalate to the team — do NOT send a generic fallback to the lead.
+    sendEmail({
+      to: CONFIG.ESCALATION_TO,
+      cc: CONFIG.ESCALATION_CC,
+      subject: "Sarah needs help with lead reply: " + subject,
+      body: "Hi,\n\nSarah could not process this lead reply automatically. Please handle it manually.\n\n" +
+            "Lead: " + replyToEmail + "\nSubject: " + subject + "\n\nTheir message:\n" +
+            body.substring(0, 800) + "\n\nSarah"
+    });
+    logAction(from, subject, "lead", "escalated_draft_failed", "", replyToEmail,
+      "draftLeadReply failed: " + draftErr);
+    thread.markRead();
+    return;
+  }
 
   sendReplyToMessage(lastMsg, drafted.body, { bcc: CONFIG.MANAGER });
 
@@ -235,12 +266,6 @@ function draftLeadReply(opts) {
       "add it to additional_guests in the book_meeting call.";
   }
 
-  var fallback = {
-    subject: "Following up | " + opts.brand,
-    body: "Hi " + (opts.leadName || "there") + ",\n\nThanks for reaching out. You can book a time directly here: " + CONFIG.CALENDLY + "\n\nSarah | " + opts.brand,
-    booking: null
-  };
-
   try {
     var result = callClaudeTools(userPrompt, tools, system, "claude-sonnet-4-6", toolChoice);
 
@@ -252,7 +277,7 @@ function draftLeadReply(opts) {
     }
 
     var out = {
-      subject: stripMarkdown(replyCall.input.subject || fallback.subject),
+      subject: stripMarkdown(replyCall.input.subject || ("Re: " + (opts.leadName || ""))),
       body: stripMarkdown(replyCall.input.body),
       booking: null
     };
@@ -276,7 +301,7 @@ function draftLeadReply(opts) {
     return out;
   } catch (e) {
     Logger.log("draftLeadReply error: " + e);
-    return fallback;
+    throw e;
   }
 }
 

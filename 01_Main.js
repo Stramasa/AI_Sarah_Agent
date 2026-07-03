@@ -35,11 +35,30 @@ function checkLeads() {
 
     Logger.log("--- THREAD: " + subject + " | from=" + from + " | msgs=" + messages.length);
 
-    // Skip emails Sarah herself sent.
+    // If the last message is from Sarah (she already replied), look backwards for
+    // the most recent external lead message. This handles SarahNeedsReview
+    // re-runs and cases where a fallback reply was sent instead of a real one.
     if (fromEmail === CONFIG.FROM_EMAIL) {
-      thread.addLabel(processedLabel);
-      thread.markRead();
-      return;
+      var foundLeadMsg = false;
+      for (var mi = messages.length - 2; mi >= 0; mi--) {
+        var miEmail = extractEmail(messages[mi].getFrom() || "");
+        if (miEmail !== CONFIG.FROM_EMAIL && !isInternalEmail(miEmail)) {
+          activeMsg = messages[mi];
+          from = messages[mi].getFrom() || "";
+          fromEmail = miEmail;
+          activeBody = messages[mi].getPlainBody() || "";
+          Logger.log("Last msg was Sarah — using prior lead message from: " + from);
+          foundLeadMsg = true;
+          break;
+        }
+      }
+      if (!foundLeadMsg) {
+        logAction(from, subject, "skipped", "sarah_last_sender", "", "",
+          fromEmail, "Skipped: Sarah is the last sender, no prior external message found.");
+        thread.addLabel(processedLabel);
+        thread.markRead();
+        return;
+      }
     }
 
     if (isBounceEmail(subject, activeBody, from)) {
