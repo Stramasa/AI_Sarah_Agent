@@ -43,16 +43,28 @@ function sendEmail(params) {
 // Use this instead of sendEmail() whenever Sarah is continuing an
 // existing conversation (a lead reply, a follow-up). GmailApp.sendEmail()
 // composes a brand-new message with no In-Reply-To/References headers,
-// so even with a "Re:" subject Gmail (and the recipient's client) 
-// not thread it with the original conversation. sourceMsg.reply() sets
+// so even with a "Re:" subject Gmail (and the recipient's client) won't
+// thread it with the original conversation. sourceMsg.reply() sets
 // those headers correctly and replies to whoever actually sent that
 // message, keeping the full history visible in one thread.
+// The previous message is quoted at the bottom (standard email convention).
 function sendReplyToMessage(sourceMsg, body, params) {
   params = params || {};
   var opts = { from: CONFIG.FROM_EMAIL, name: CONFIG.FROM_NAME };
   if (params.bcc) opts.bcc = params.bcc;
-  if (params.cc) opts.cc = params.cc;
-  sourceMsg.reply(body, opts);
+  if (params.cc)  opts.cc  = params.cc;
+
+  // Append a quoted version of the message being replied to so the
+  // recipient sees the context (standard email client behaviour).
+  var originalDate = "";
+  try { originalDate = Utilities.formatDate(sourceMsg.getDate(), CONFIG.CALENDAR_TZ, "EEE, d MMM yyyy 'at' HH:mm"); } catch(e) {}
+  var originalFrom = sourceMsg.getFrom() || "";
+  var originalBody = (sourceMsg.getPlainBody() || "").substring(0, 2000);
+  var quotedBlock =
+    "\n\n---\nOn " + originalDate + ", " + originalFrom + " wrote:\n" +
+    originalBody.split("\n").map(function(l) { return "> " + l; }).join("\n");
+
+  sourceMsg.reply(body + quotedBlock, opts);
 }
 function isCalendlyConfirmation(subject, from, body) {
   var s = (subject || "").toLowerCase();

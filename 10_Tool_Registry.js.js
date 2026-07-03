@@ -40,7 +40,8 @@ var LEAD_TOOLS = [
       type: "object",
       properties: {
         chosen_slot: { type: "string", description: "Exact copy of the confirmed slot label from the offered list, e.g. 'Mon 6 Jul at 9:00AM ET'." },
-        meeting_title: { type: "string", description: "Short meeting title, e.g. 'Stramasa Intro Call - Acme Corp'." }
+        meeting_title: { type: "string", description: "Short meeting title, e.g. 'Stramasa Intro Call - Acme Corp'." },
+        additional_guests: { type: "array", items: { type: "string" }, description: "Any extra email addresses the lead explicitly asked to include as guests (e.g. a colleague). Do not add anyone the lead did not explicitly mention." }
       },
       required: ["chosen_slot"]
     }

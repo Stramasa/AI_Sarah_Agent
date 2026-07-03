@@ -206,7 +206,9 @@ function draftLeadReply(opts) {
       bookingInstruction + "\n" +
       slotBlock + "\n\n" +
       "Their latest message:\n" + opts.body.substring(0, 1400) + "\n\n" +
-      "Keep it warm and brief. Max 85 words before sign-off.";
+      "Keep it warm and brief. Max 85 words before sign-off. " +
+      "IMPORTANT: if the lead mentions a colleague's email address and asks to include them, " +
+      "add it to additional_guests in the book_meeting call.";
   }
 
   var fallback = {
@@ -239,7 +241,8 @@ function draftLeadReply(opts) {
       } else {
         try {
           var meetingTitle = bookCall.input.meeting_title || (opts.brand + " Intro Call - " + (opts.leadName || opts.leadEmail));
-          out.booking = createLeadMeeting(matchedSlot, meetingTitle, opts.leadEmail);
+          var extraGuests = bookCall.input.additional_guests || [];
+          out.booking = createLeadMeeting(matchedSlot, meetingTitle, opts.leadEmail, extraGuests);
         } catch (bookErr) {
           Logger.log("BOOKING ERROR for " + opts.leadEmail + ": " + bookErr);
         }

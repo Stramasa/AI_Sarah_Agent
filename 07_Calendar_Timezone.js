@@ -134,7 +134,7 @@ if (tzRegion === "US") {
 // (not her own), the event is created directly on it, so stramasapro
 // is the organizer - not sarah.stramasa@gmail.com. Internal team is
 // cc'd via CONFIG.TEAM_CC, plus the lead as the external guest.
-function createLeadMeeting(slot, meetingTitle, leadEmail) {
+function createLeadMeeting(slot, meetingTitle, leadEmail, additionalGuests) {
   var cal = CalendarApp.getCalendarById(CONFIG.CALENDAR_ID);
   if (!cal) throw new Error("Calendar not found or not accessible: " + CONFIG.CALENDAR_ID);
   if (!slot || !slot.start || !slot.end) throw new Error("Invalid slot passed to createLeadMeeting");
@@ -142,6 +142,14 @@ function createLeadMeeting(slot, meetingTitle, leadEmail) {
 
   var guestList = CONFIG.TEAM_CC.slice();
   if (guestList.indexOf(leadEmail) === -1) guestList.push(leadEmail);
+
+  // Include any extra guests the lead explicitly mentioned (e.g. a colleague).
+  if (additionalGuests && additionalGuests.length) {
+    additionalGuests.forEach(function(g) {
+      var clean = (g || "").trim().toLowerCase();
+      if (clean && guestList.indexOf(clean) === -1) guestList.push(clean);
+    });
+  }
 
   var event = cal.createEvent(
     meetingTitle || "Stramasa Introductory Call",
