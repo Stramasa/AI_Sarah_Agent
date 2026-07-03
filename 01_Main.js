@@ -105,22 +105,12 @@ function checkLeads() {
     if (possibleClient) {
       Logger.log("PRE-CLASSIFY: matched known client — " + possibleClient.clientName);
 
+      // Known clients always go through handleClientEmail (internal tracking + team notification).
+      // We never send external scheduling emails to existing clients — that must come from the
+      // account manager directly, not from Sarah's automation.
       try {
-        if (isForwardedByTeam && looksLikeSchedulingRequest(activeBody)) {
-          handleSchedulingForward(
-            thread, activeMsg,
-            { type: "client", name: possibleClient.clientName || "", service_interest: "" },
-            detectBrand(subject + " " + activeBody),
-            classifyEmail,
-            buildSarahContext("lead", activeBody, instructions, knowledge),
-            forwardedByEmail
-          );
-          sessionLog.push("Team-forwarded scheduling (known client) handled: " + subject);
-        } else {
-          handleClientEmail(thread, activeMsg, buildSarahContext("client", activeBody, instructions, knowledge));
-          sessionLog.push("Known client email processed: " + subject);
-        }
-
+        handleClientEmail(thread, activeMsg, buildSarahContext("client", activeBody, instructions, knowledge));
+        sessionLog.push("Known client email processed: " + subject);
         logAction(from, subject, "client", "pre_classify_client_match",
           possibleClient.clientName || "", "Matched Client Directory before Claude classification.",
           possibleClient.email || classifyEmail, "Known client match.");
@@ -137,7 +127,7 @@ function checkLeads() {
     }
 
     // ---- Claude classification -------------------------------------------
-    var classification = safeClassify(subject, activeBody, classifyFrom);
+    var classification = safeClassify(subject, activeBody, classifyFrom, instructions);
     Logger.log("CLASSIFIED: " + JSON.stringify(classification));
 
     // If a team member forwarded this email, trust that it needs a response —
@@ -187,20 +177,10 @@ function checkLeads() {
         sessionLog.push("New lead replied to: " + subject);
 
       } else if (classification.type === "client") {
-        // A "client" result on a team-forwarded email is usually a scheduling
-        // or coordination request — reply with calendar slots rather than just
-        // updating internal records silently.
-        if (isForwardedByTeam && classifyEmail !== fromEmail) {
-          handleSchedulingForward(
-            thread, activeMsg, classification, brand, classifyEmail,
-            buildSarahContext("lead", activeBody, instructions, knowledge),
-            forwardedByEmail
-          );
-          sessionLog.push("Team-forwarded coordination handled: " + subject);
-        } else {
-          handleClientEmail(thread, activeMsg, buildSarahContext("client", activeBody, instructions, knowledge));
-          sessionLog.push("Client/PM email processed: " + subject);
-        }
+        // Client emails always go to handleClientEmail for internal tracking.
+        // Sarah never sends external scheduling emails to existing clients.
+        handleClientEmail(thread, activeMsg, buildSarahContext("client", activeBody, instructions, knowledge));
+        sessionLog.push("Client/PM email processed: " + subject);
 
       } else {
         handleUnsureEmail(thread, subject, activeBody, from, "Classification unsure");
@@ -350,7 +330,7 @@ function debugCheckLeads() {
       return;
     }
 
-    var classification = safeClassify(subject, activeBody, classifyFrom);
+    var classification = safeClassify(subject, activeBody, classifyFrom, "");
     var finalType = classification.type;
 
     if (isTeamFwd && (finalType === "spam" || finalType === "talent")) {

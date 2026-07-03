@@ -1,4 +1,4 @@
-function classifyEmail(subject, body, from) {
+function classifyEmail(subject, body, from, instructions) {
   var prompt =
     "Classify this inbound email for Stramasa Group.\n\n" +
     "Types:\n" +
@@ -10,6 +10,7 @@ function classifyEmail(subject, body, from) {
 
     "Hard rules:\n" +
     "A lead is someone who wants to HIRE Stramasa - they want Stramasa to be paid to do work for them. Direction matters.\n" +
+    "LEAD GEN DIRECTION RULE — this is critical: if a sender says 'I need new clients', 'help me find clients', 'I need more business', 'we are launching and need leads', or similar, they are ASKING Stramasa to provide lead generation services FOR THEM. This is a LEAD, not spam.\n" +
     "If the sender is instead offering, promoting, or pitching their OWN services, skills, portfolio, product, or freelance/agency work TO Stramasa, this is a vendor solicitation and must be classified as spam - even if it is phrased as 'collaboration', 'partnership', 'let's work together', 'thoughts on my portfolio', or similar soft framing. This applies no matter how relevant, professional, or well-targeted the pitch is. The test is simple: would Stramasa be the one paying, or the one being asked to pay/consider hiring the sender? If the sender would be paid or hired, it is spam, not a lead.\n" +
     "If the email is about an existing project, deliverable, campaign, content calendar, approval, revision, feedback, invoice, meeting follow-up, deadline, support request, ongoing work, monthly work, client request, or previous engagement, classify as client.\n" +
     "If the email appears to be from or forwarded from an existing client but the client is not recognized, classify as client or unsure, never lead.\n" +
@@ -18,8 +19,10 @@ function classifyEmail(subject, body, from) {
     "Website contact form submissions forwarded from requests@stramasa.com or groupleads@stramasa.com are leads unless the message is clearly spam, a vendor pitch, or an existing client project message.\n" +
     "IntroLynk contact form questions about buying leads, credits, pricing, subscriptions, registration, or how the platform works are leads unless the content itself is spam.\n" +
     "Recruitshore talent applications are talent, but Recruitshore hire/profile requests are leads.\n" +
-    "Unsolicited offers to improve our SEO, sell backlinks, redesign our website, sell lead generation, sell databases, do animation/design/dev work, or send a price estimate for their services are spam unless they are clearly part of an existing conversation.\n" +
+    "Unsolicited offers to improve OUR SEO, sell US backlinks, redesign OUR website, sell US leads or databases, do animation/design/dev work FOR US, or send a price estimate for their services TO US are spam unless they are clearly part of an existing conversation. Note the direction: these are people trying to sell to Stramasa, not clients hiring Stramasa.\n" +
     "Calendly confirmations and bounce emails are handled before this classifier, so do not call those leads.\n\n" +
+
+    (instructions ? "ADDITIONAL CLASSIFICATION GUIDANCE (from instructions):\n" + instructions.substring(0, 1200) + "\n\n" : "") +
 
     "Return ONLY raw JSON with this exact structure:\n" +
     "{\"type\":\"lead|client|talent|spam|unsure\",\"name\":\"\",\"service_interest\":\"\",\"company\":\"\",\"reason\":\"\"}\n\n" +
@@ -34,9 +37,9 @@ function classifyEmail(subject, body, from) {
   return result;
 }
 
-function safeClassify(subject, body, from) {
+function safeClassify(subject, body, from, instructions) {
   try {
-    return classifyEmail(subject, body, from);
+    return classifyEmail(subject, body, from, instructions);
   } catch(e) {
     Logger.log("classifyEmail error: " + e);
     return {
