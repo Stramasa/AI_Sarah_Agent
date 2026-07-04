@@ -8,7 +8,7 @@
 //
 // Recommended triggers:
 //   checkLeads()       every 1 hour
-//   processFollowUps() every 1 hour
+//   processFollowUps() once per day (follow-up thresholds are in days, not minutes)
 // ============================================================
 
 var CONFIG = {

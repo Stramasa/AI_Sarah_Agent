@@ -178,6 +178,7 @@ function handleLeadReply(thread, memory) {
     logAction(from, subject, "lead", "meeting_booked", "", replyToEmail,
       "Calendar invite sent for " + drafted.booking.start + ". Guests: " + drafted.booking.guests.join(", "));
     updateMemoryBrief("BOOKING", "Meeting booked for " + replyToEmail + " at " + drafted.booking.start);
+    try { thread.removeLabel(getOrCreateLabel(CONFIG.LABEL_FOLLOWUP)); } catch(le) {}
   } else {
     updateLeadStatus(replyToEmail, "replied", "Lead replied. Offered time: " + (offeredTime || "none"));
     logAction(from, subject, "lead", "contextual_reply", "", replyToEmail, "Replied to lead reply");
@@ -311,16 +312,32 @@ function generateFollowUp(data, num) {
     "warm and concise, a little more direct",
     "brief final note, leave the door open"
   ];
+
+  // Get fresh available slots for this lead's timezone.
+  var tzRegion = detectTimezoneRegion((data.leadEmail || "") + " " + (data.subject || ""));
+  var slotsDetailed = [];
+  try { slotsDetailed = getAvailableSlotsDetailed(tzRegion); } catch(e) {}
+  var slotLabels = slotsDetailed.map(function(s) { return s.label; });
+  var slotBlock = slotLabels.length > 0
+    ? "\n\nHere are a few times that still work:\n" + slotLabels.join("\n") + "\n\nOr book directly: " + CONFIG.CALENDLY
+    : "\n\nYou can also book directly here: " + CONFIG.CALENDLY;
+
   var prompt =
     "You are Sarah, client services at " + data.brand + ".\n" +
-    "Follow-up #" + num + " to a lead who has not replied.\n" +
+    "Write follow-up #" + num + " to a lead who has not replied to your first email.\n" +
     "Tone: " + (tones[num - 1] || tones[2]) + "\n" +
-    "Lead: " + (data.leadName || "there") + " | Topic: " + data.subject + "\n" +
-    "Calendly: " + CONFIG.CALENDLY + "\n\n" +
-    "Max 55 words. No em dashes. No bullet points. Plain text only. Sign off: Sarah | " + data.brand + "\n" +
-    "Write email body only.";
-  try { return stripMarkdown(callClaude(prompt, "claude-haiku-4-5-20251001")); }
-  catch(e) { return "Hi, just following up on my previous email. If it is useful to compare notes, you can book here: " + CONFIG.CALENDLY + "\n\nSarah | " + data.brand; }
+    "Lead: " + (data.leadName || "there") + " | Topic: " + data.subject + "\n\n" +
+    "Max 45 words. No em dashes. No bullet points. Plain text only.\n" +
+    "Sign off: Sarah | " + data.brand + "\n" +
+    "Do NOT include calendar slots or a Calendly link in your text — they are appended automatically.\n" +
+    "Write the email body only (warm opening paragraph + sign-off).";
+
+  try {
+    return stripMarkdown(callClaude(prompt, "claude-haiku-4-5-20251001")) + slotBlock;
+  } catch(e) {
+    return "Hi " + (data.leadName || "there") + ",\n\nJust following up to make sure my previous email didn't get lost." +
+      slotBlock + "\n\nSarah | " + data.brand;
+  }
 }
 
 function extractOfferedTime(body) {

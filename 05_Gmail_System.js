@@ -1,8 +1,58 @@
 function handleCalendlyConfirmation(thread, subject, body, from) {
   var info = extractCalendlyInfo(subject, body);
-  logAction(from, subject, "system", "calendly_logged_no_reply", info.name || "", info.email || "", "Booking confirmation logged. No reply sent.");
+
+  logAction(from, subject, "system", "calendly_booked", info.name || "", info.email || "",
+    "Calendly booking: " + (info.when || subject));
   updateLeadStatus(info.email, "booked", "Calendly booking: " + (info.when || subject));
-  updateMemoryBrief("BOOKING", "Calendly booking logged for " + (info.email || info.name || "unknown") + ": " + (info.when || subject));
+  updateMemoryBrief("BOOKING", "Calendly booking for " + (info.email || info.name || "unknown") + ": " + (info.when || subject));
+
+  // Stop follow-ups and send a warm confirmation to the lead in their original thread.
+  if (info.email) {
+    var props = PropertiesService.getScriptProperties();
+    props.getKeys().forEach(function(key) {
+      if (key.indexOf(CONFIG.PROP_PREFIX) !== 0) return;
+      try {
+        var data = JSON.parse(props.getProperty(key) || "{}");
+        if ((data.leadEmail || "").toLowerCase() !== info.email.toLowerCase()) return;
+
+        // Prevent processFollowUps from sending any more follow-ups.
+        data.replied = true;
+        props.setProperty(key, JSON.stringify(data));
+
+        var leadName = data.leadName || "there";
+        var brand = data.brand || DEFAULT_BRAND;
+        var when = info.when ? " on " + info.when : "";
+        var confirmMsg =
+          "Hi " + leadName + ",\n\n" +
+          "Your booking is confirmed" + when + " — looking forward to speaking with you!\n\n" +
+          "Sarah | " + brand;
+
+        // Reply in the original lead thread if it still exists.
+        try {
+          var leadThread = GmailApp.getThreadById(data.threadId);
+          var leadMsgs = leadThread ? leadThread.getMessages() : null;
+          if (!leadMsgs || leadMsgs.length === 0) throw new Error("empty thread");
+          sendReplyToMessage(leadMsgs[leadMsgs.length - 1], confirmMsg, { bcc: CONFIG.MANAGER });
+          try { leadThread.removeLabel(getOrCreateLabel(CONFIG.LABEL_FOLLOWUP)); } catch(le) {}
+          logAction(info.email, subject, "lead", "booking_confirmed_reply", leadName, info.email,
+            "Calendly confirmation received. Replied to lead in original thread.");
+        } catch(threadErr) {
+          // Thread gone — send a fresh email so the lead gets the confirmation.
+          sendEmail({
+            to: info.email,
+            subject: "Your booking is confirmed | " + brand,
+            body: confirmMsg,
+            bcc: CONFIG.MANAGER
+          });
+          logAction(info.email, subject, "lead", "booking_confirmed_fresh_email", leadName, info.email,
+            "Calendly confirmation received. Sent fresh email (original thread unavailable).");
+        }
+      } catch(parseErr) {
+        Logger.log("Calendly: error processing lead key " + key + ": " + parseErr);
+      }
+    });
+  }
+
   thread.addLabel(getOrCreateLabel(CONFIG.LABEL_SYSTEM));
   thread.markRead();
 }
