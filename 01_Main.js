@@ -387,18 +387,52 @@ function processFollowUps() {
       var followThread = GmailApp.getThreadById(data.threadId);
       var followMsgs = followThread ? followThread.getMessages() : null;
       if (followMsgs && followMsgs.length > 0) {
-        sendReplyToMessage(followMsgs[followMsgs.length - 1], body, { bcc: CONFIG.MANAGER });
-        repliedInThread = true;
+        // Reply to the last message that came FROM the lead. Replying to
+        // Sarah's own sent message would loop back to Sarah instead of the lead.
+        var replyTarget = null;
+        for (var mi = followMsgs.length - 1; mi >= 0; mi--) {
+          var msgFrom = extractEmail(followMsgs[mi].getFrom() || "");
+          if (msgFrom !== CONFIG.FROM_EMAIL && !isInternalEmail(msgFrom)) {
+            replyTarget = followMsgs[mi];
+            break;
+          }
+        }
+        if (replyTarget) {
+          sendReplyToMessage(replyTarget, body, { bcc: CONFIG.MANAGER });
+          repliedInThread = true;
+        }
       }
     } catch (threadErr) {
       Logger.log("Follow-up reply-in-thread failed for " + data.leadEmail + ": " + threadErr);
     }
 
     if (!repliedInThread) {
+      // Forwarded lead: no lead message exists in the form-submission thread.
+      // Find Sarah's initial sent email to the lead and quote it for context
+      // so the lead understands what this follow-up is about.
+      var quotedContext = "";
+      try {
+        var sentLookup = data.sentThreadId
+          ? [GmailApp.getThreadById(data.sentThreadId)]
+          : GmailApp.search('in:sent to:' + data.leadEmail, 0, 1);
+        if (sentLookup.length > 0 && sentLookup[0]) {
+          var sentMsgs = sentLookup[0].getMessages();
+          if (sentMsgs.length > 0) {
+            var prevMsg = sentMsgs[sentMsgs.length - 1];
+            var prevDate = "";
+            try { prevDate = Utilities.formatDate(prevMsg.getDate(), CONFIG.CALENDAR_TZ, "EEE, d MMM yyyy 'at' HH:mm"); } catch(e) {}
+            quotedContext = "\n\n---\nOn " + prevDate + ", " + CONFIG.FROM_NAME + " wrote:\n" +
+              (prevMsg.getPlainBody() || "").substring(0, 1500)
+                .split("\n").map(function(l) { return "> " + l; }).join("\n");
+          }
+        }
+      } catch(qe) {
+        Logger.log("Could not build quoted context for follow-up to " + data.leadEmail + ": " + qe);
+      }
       sendEmail({
         to: data.leadEmail,
         subject: subjectWithRe(data.subject),
-        body: body,
+        body: body + quotedContext,
         bcc: CONFIG.MANAGER
       });
     }

@@ -44,10 +44,20 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
   var bccList = [CONFIG.MANAGER];
   if (forwardedByEmail && forwardedByEmail !== CONFIG.MANAGER) bccList.push(forwardedByEmail);
 
+  // sentThreadId: for forwarded leads Sarah sends a fresh email, so the form-submission
+  // thread (threadId) has no lead message to reply to. We locate the just-sent thread
+  // immediately after sending so follow-ups can include quoted context from that email.
+  var sentThreadId = null;
+
   if (forwardedByEmail) {
     // Forwarded lead: Sarah is starting a fresh conversation with the external
-    // person who never emailed sarah directly, so a new email is correct.
+    // person who never emailed Sarah directly, so a new email is correct.
     sendEmail({ to: leadEmail, subject: drafted.subject, body: drafted.body, bcc: bccList.join(",") });
+    // Find the sent thread so processFollowUps can quote it as context.
+    try {
+      var sentSearch = GmailApp.search('in:sent to:' + leadEmail, 0, 1);
+      if (sentSearch.length > 0) sentThreadId = sentSearch[0].getId();
+    } catch(se) { Logger.log("Could not locate sent thread for " + leadEmail + ": " + se); }
   } else {
     // Direct inbound email: reply in-thread so the lead's next reply lands in
     // the same thread and hasLeadRecord matching works correctly.
@@ -72,6 +82,7 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
     CONFIG.PROP_PREFIX + threadId,
     JSON.stringify({
       threadId: threadId,
+      sentThreadId: sentThreadId || null,
       leadEmail: leadEmail,
       leadName: leadName,
       subject: subject,

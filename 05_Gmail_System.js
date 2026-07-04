@@ -29,7 +29,7 @@ function handleCalendlyConfirmation(thread, subject, body, from) {
 
         // Reply in the original lead thread if it still exists.
         try {
-          var leadThread = GmailApp.getThreadById(data.threadId);
+          var leadThread = GmailApp.getThreadById(data.sentThreadId || data.threadId);
           var leadMsgs = leadThread ? leadThread.getMessages() : null;
           if (!leadMsgs || leadMsgs.length === 0) throw new Error("empty thread");
           sendReplyToMessage(leadMsgs[leadMsgs.length - 1], confirmMsg, { bcc: CONFIG.MANAGER });
