@@ -12,6 +12,20 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
     return;
   }
 
+  // Duplicate detection: the same person often submits both the popup and the
+  // contact form. Check script properties (active sequence) and the Leads sheet
+  // (contacted within 14 days) before doing anything — no email, no new row.
+  var existingLead = findActiveLead(leadEmail);
+  if (existingLead) {
+    Logger.log("DUPLICATE LEAD: " + leadEmail + " already contacted. Skipping thread " + threadId);
+    appendLeadNote(leadEmail, "Additional form submission received (duplicate skipped): " + subject);
+    logAction(from, subject, "lead", "duplicate_skipped", leadName, leadEmail,
+      "Duplicate submission — already contacted in a previous thread. No email sent.");
+    thread.addLabel(getOrCreateLabel(CONFIG.LABEL_LEAD));
+    thread.markRead();
+    return;
+  }
+
   var tzRegion = detectTimezoneRegion(body + " " + from + " " + leadEmail);
   var slotsDetailed = getAvailableSlotsDetailed(tzRegion);
 
@@ -350,6 +364,72 @@ function extractOfferedTime(body) {
     var r = callClaude(prompt, "claude-haiku-4-5-20251001").trim();
     return (r.toLowerCase() === "none" || r.length < 4) ? null : r;
   } catch(e) { return null; }
+}
+
+// Returns the first matching lead data object if this email is already in active
+// tracking (script properties) or was contacted within the last 14 days (Leads sheet).
+// Returns null if this is genuinely a new lead.
+function findActiveLead(email) {
+  if (!email) return null;
+  var needle = email.toLowerCase();
+
+  // Script properties are the authoritative active-tracking store.
+  var props = PropertiesService.getScriptProperties();
+  var keys = props.getKeys();
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].indexOf(CONFIG.PROP_PREFIX) !== 0) continue;
+    try {
+      var data = JSON.parse(props.getProperty(keys[i]) || "{}");
+      if ((data.leadEmail || "").toLowerCase() === needle) return data;
+    } catch(e) {}
+  }
+
+  // Fall back to the Leads sheet for leads whose script property was already cleaned up.
+  try {
+    var sheet = getSheet("Leads");
+    if (!sheet) return null;
+    var rows = sheet.getDataRange().getValues();
+    var map = headerMap(rows[0]);
+    var cutoff = new Date().getTime() - 14 * 24 * 3600000;
+    for (var j = 1; j < rows.length; j++) {
+      if ((val(rows[j], map, "Email") || "").toLowerCase() !== needle) continue;
+      var lastContact = val(rows[j], map, "LastEmailDateTime") || val(rows[j], map, "LastContact") || "";
+      if (lastContact && new Date(lastContact).getTime() > cutoff) {
+        return {
+          leadEmail: email,
+          leadName: val(rows[j], map, "Name") || "",
+          subject: val(rows[j], map, "SourceSubject") || "",
+          brand: val(rows[j], map, "Brand") || "",
+          fromSheet: true
+        };
+      }
+    }
+  } catch(e) {
+    Logger.log("findActiveLead sheet check error: " + e);
+  }
+
+  return null;
+}
+
+// Appends a note to the most recent Leads row for this email without
+// changing the status, so duplicate submissions leave a paper trail.
+function appendLeadNote(email, note) {
+  try {
+    if (!email || !note) return;
+    var sheet = getSheet("Leads");
+    if (!sheet) return;
+    var rows = sheet.getDataRange().getValues();
+    var map = headerMap(rows[0]);
+    for (var i = rows.length - 1; i >= 1; i--) {
+      if ((val(rows[i], map, "Email") || "").toLowerCase() !== email.toLowerCase()) continue;
+      var existing = val(rows[i], map, "Notes") || "";
+      setByHeader(sheet, i + 1, map, "Notes",
+        existing ? existing + "\n" + isoNow() + ": " + note : isoNow() + ": " + note);
+      return;
+    }
+  } catch(e) {
+    Logger.log("appendLeadNote error: " + e);
+  }
 }
 
 function updateLeadStatus(email, status, note) {
