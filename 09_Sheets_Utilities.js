@@ -82,6 +82,42 @@ function getOrCreateLabel(name) {
   return GmailApp.getUserLabelByName(name) || GmailApp.createLabel(name);
 }
 
+// Returns a lead row object by searching the Leads sheet on the given column.
+// Result includes a reference to the live Sheet + rowIndex so callers can write
+// back without doing a second lookup.
+function _leadRowLookup(keyField, keyValue) {
+  if (!keyValue) return null;
+  try {
+    var sheet = getSheet("Leads");
+    if (!sheet) return null;
+    var rows = sheet.getDataRange().getValues();
+    if (rows.length < 2) return null;
+    var map = headerMap(rows[0]);
+    var needle = String(keyValue).toLowerCase();
+    for (var i = 1; i < rows.length; i++) {
+      if (String(val(rows[i], map, keyField) || "").toLowerCase() !== needle) continue;
+      return {
+        sheet:         sheet,
+        rowIndex:      i + 1,
+        map:           map,
+        email:         val(rows[i], map, "Email") || "",
+        name:          val(rows[i], map, "Name") || "",
+        brand:         val(rows[i], map, "Brand") || "",
+        subject:       val(rows[i], map, "SourceSubject") || "",
+        status:        val(rows[i], map, "Status") || "",
+        followUpCount: parseInt(val(rows[i], map, "FollowUpCount") || "0", 10) || 0,
+        followUpSentAt: val(rows[i], map, "FollowUpSentAt") || "",
+        replyCount:    parseInt(val(rows[i], map, "ReplyCount") || "0", 10) || 0
+      };
+    }
+  } catch(e) {
+    Logger.log("_leadRowLookup error (" + keyField + "=" + keyValue + "): " + e);
+  }
+  return null;
+}
+function findLeadSheetRowByThreadId(threadId) { return _leadRowLookup("ThreadId", threadId); }
+function findLeadSheetRowByEmail(email)        { return _leadRowLookup("Email",    email);    }
+
 // --- Admin / debug helpers ---
 // Run listLeadProperties() from the Apps Script editor to see all pending
 // follow-up records. Run deleteAllLeadProperties() to wipe them (e.g. after

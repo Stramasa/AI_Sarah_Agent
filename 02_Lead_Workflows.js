@@ -44,23 +44,10 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
   var bccList = [CONFIG.MANAGER];
   if (forwardedByEmail && forwardedByEmail !== CONFIG.MANAGER) bccList.push(forwardedByEmail);
 
-  // sentThreadId: for forwarded leads Sarah sends a fresh email, so the form-submission
-  // thread (threadId) has no lead message to reply to. We locate the just-sent thread
-  // immediately after sending so follow-ups can include quoted context from that email.
-  var sentThreadId = null;
-
   if (forwardedByEmail) {
-    // Forwarded lead: Sarah is starting a fresh conversation with the external
-    // person who never emailed Sarah directly, so a new email is correct.
     sendEmail({ to: leadEmail, subject: drafted.subject, body: drafted.body, bcc: bccList.join(",") });
-    // Find the sent thread so processFollowUps can quote it as context.
-    try {
-      var sentSearch = GmailApp.search('in:sent to:' + leadEmail, 0, 1);
-      if (sentSearch.length > 0) sentThreadId = sentSearch[0].getId();
-    } catch(se) { Logger.log("Could not locate sent thread for " + leadEmail + ": " + se); }
   } else {
-    // Direct inbound email: reply in-thread so the lead's next reply lands in
-    // the same thread and hasLeadRecord matching works correctly.
+    // Direct inbound: reply in-thread so the lead's next reply lands in the same thread.
     sendReplyToMessage(msg, drafted.body, { bcc: bccList.join(",") });
   }
 
@@ -75,23 +62,11 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
     "SourceSubject": subject,
     "LastEmailDateTime": isoNow(),
     "LastEmailSubject": subject,
-    "Notes": "Initial Sarah reply sent. TZ: " + tzRegion
+    "Notes": "Initial Sarah reply sent. TZ: " + tzRegion,
+    "ThreadId": threadId,
+    "FollowUpCount": "0",
+    "FollowUpSentAt": isoNow()
   });
-
-  PropertiesService.getScriptProperties().setProperty(
-    CONFIG.PROP_PREFIX + threadId,
-    JSON.stringify({
-      threadId: threadId,
-      sentThreadId: sentThreadId || null,
-      leadEmail: leadEmail,
-      leadName: leadName,
-      subject: subject,
-      brand: brand,
-      sentAt: new Date().getTime(),
-      followUpCount: 0,
-      replied: false
-    })
-  );
 
   thread.addLabel(getOrCreateLabel(CONFIG.LABEL_LEAD));
   thread.addLabel(getOrCreateLabel(CONFIG.LABEL_FOLLOWUP));
@@ -106,7 +81,6 @@ function handleLeadReply(thread, memory) {
   var threadId = thread.getId();
 
   // Find the last message from the external lead — not Sarah, not internal team.
-  // This handles cases where Sarah's own reply is the most recent message.
   var lastMsg = null;
   for (var i = messages.length - 1; i >= 0; i--) {
     var mEmail = extractEmail(messages[i].getFrom() || "");
@@ -124,19 +98,19 @@ function handleLeadReply(thread, memory) {
   var body = lastMsg.getPlainBody() || "";
   var subject = lastMsg.getSubject() || "";
 
-  var props = PropertiesService.getScriptProperties();
-  var key = CONFIG.PROP_PREFIX + threadId;
-  var data = JSON.parse(props.getProperty(key) || "{}");
-  var replyToEmail = data.leadEmail || extractEmail(from);
-  var brand = data.brand || DEFAULT_BRAND;
-  var name = data.leadName || "";
+  // Find lead data from the Leads sheet. Try threadId first (direct inbound leads);
+  // fall back to email for forwarded leads where the reply arrives in a different thread.
+  var fromEmail = extractEmail(from);
+  var leadRow = findLeadSheetRowByThreadId(threadId) || findLeadSheetRowByEmail(fromEmail);
+
+  var replyToEmail = leadRow ? leadRow.email : fromEmail;
+  var brand        = leadRow ? (leadRow.brand || DEFAULT_BRAND) : DEFAULT_BRAND;
+  var name         = leadRow ? leadRow.name : "";
+  var replyCount   = leadRow ? leadRow.replyCount : 0;
+
   var tzRegion = detectTimezoneRegion(body + " " + from + " " + replyToEmail);
   var offeredTime = extractOfferedTime(body);
   var slotsDetailed = getAvailableSlotsDetailed(tzRegion);
-
-  // Build thread context so Claude can see the full conversation when the
-  // lead says something like "I agree with the proposal" or "Tuesday works" —
-  // without this context Claude can't know what was previously offered.
   var threadContext = buildThreadContext(messages);
 
   var drafted;
@@ -155,7 +129,6 @@ function handleLeadReply(thread, memory) {
     });
   } catch(draftErr) {
     Logger.log("handleLeadReply: draftLeadReply failed for " + replyToEmail + ": " + draftErr);
-    // Escalate to the team — do NOT send a generic fallback to the lead.
     sendEmail({
       to: CONFIG.ESCALATION_TO,
       cc: CONFIG.ESCALATION_CC,
@@ -172,15 +145,14 @@ function handleLeadReply(thread, memory) {
 
   sendReplyToMessage(lastMsg, drafted.body, { bcc: CONFIG.MANAGER });
 
-  if (data.threadId) {
-    data.replied = true;
-    data.replyCount = (data.replyCount || 0) + 1;
-    props.setProperty(key, JSON.stringify(data));
+  // Increment reply count in the sheet.
+  replyCount = replyCount + 1;
+  if (leadRow) {
+    setByHeader(leadRow.sheet, leadRow.rowIndex, leadRow.map, "ReplyCount", String(replyCount));
   }
 
   // After LEAD_ESCALATE_AFTER_ROUNDS back-and-forths with no booking,
-  // quietly notify Pepijn + Sang so a human can decide whether to step in.
-  var replyCount = data.replyCount || 1;
+  // quietly notify the team so a human can decide whether to step in.
   var threshold = CONFIG.LEAD_ESCALATE_AFTER_ROUNDS || 3;
   if (!drafted.booking && replyCount >= threshold) {
     try {
@@ -377,25 +349,11 @@ function extractOfferedTime(body) {
   } catch(e) { return null; }
 }
 
-// Returns the first matching lead data object if this email is already in active
-// tracking (script properties) or was contacted within the last 14 days (Leads sheet).
-// Returns null if this is genuinely a new lead.
+// Returns the active lead record if this email is already tracked in the Leads
+// sheet (contacted within the last 14 days). Returns null for genuinely new leads.
 function findActiveLead(email) {
   if (!email) return null;
   var needle = email.toLowerCase();
-
-  // Script properties are the authoritative active-tracking store.
-  var props = PropertiesService.getScriptProperties();
-  var keys = props.getKeys();
-  for (var i = 0; i < keys.length; i++) {
-    if (keys[i].indexOf(CONFIG.PROP_PREFIX) !== 0) continue;
-    try {
-      var data = JSON.parse(props.getProperty(keys[i]) || "{}");
-      if ((data.leadEmail || "").toLowerCase() === needle) return data;
-    } catch(e) {}
-  }
-
-  // Fall back to the Leads sheet for leads whose script property was already cleaned up.
   try {
     var sheet = getSheet("Leads");
     if (!sheet) return null;
@@ -408,17 +366,16 @@ function findActiveLead(email) {
       if (lastContact && new Date(lastContact).getTime() > cutoff) {
         return {
           leadEmail: email,
-          leadName: val(rows[j], map, "Name") || "",
-          subject: val(rows[j], map, "SourceSubject") || "",
-          brand: val(rows[j], map, "Brand") || "",
+          leadName:  val(rows[j], map, "Name") || "",
+          subject:   val(rows[j], map, "SourceSubject") || "",
+          brand:     val(rows[j], map, "Brand") || "",
           fromSheet: true
         };
       }
     }
   } catch(e) {
-    Logger.log("findActiveLead sheet check error: " + e);
+    Logger.log("findActiveLead error: " + e);
   }
-
   return null;
 }
 

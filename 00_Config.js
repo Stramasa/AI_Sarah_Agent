@@ -87,7 +87,7 @@ var TARGET_TZ = {
 };
 
 var SHEET_HEADERS = {
-  "Leads": ["Date", "Name", "Email", "Brand", "Service", "Status", "LastContact", "SourceSubject", "LastEmailDateTime", "LastEmailSubject", "Notes"],
+  "Leads": ["Date", "Name", "Email", "Brand", "Service", "Status", "LastContact", "SourceSubject", "LastEmailDateTime", "LastEmailSubject", "Notes", "ThreadId", "FollowUpCount", "FollowUpSentAt", "ReplyCount"],
   "Log": ["Timestamp", "From", "Subject", "Classification", "Action", "Related Client", "Related Email", "Notes"],
   "Team": ["Name", "Email", "Timezone", "Role and Skills"],
   "Client Directory": ["Client Name", "Company", "Contacts", "Email", "Timezone", "Projects", "Status", "Priority", "Important Notes", "Last Email Subject", "Last Email DateTime", "Sarah Action", "Next Action"],

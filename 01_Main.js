@@ -157,8 +157,7 @@ function checkLeads() {
     }
 
     var brand = detectBrand(subject + " " + activeBody + " " + to);
-    var props = PropertiesService.getScriptProperties();
-    var hasLeadRecord = props.getProperty(CONFIG.PROP_PREFIX + threadId) !== null;
+    var hasLeadRecord = findLeadSheetRowByThreadId(threadId) !== null;
 
     logAction(from, subject, classification.type, "pending", "", "", classifyEmail, classification.reason || "");
 
@@ -340,8 +339,7 @@ function debugCheckLeads() {
 
     Logger.log("  Classification: " + finalType + " | reason: " + (classification.reason || ""));
 
-    var props = PropertiesService.getScriptProperties();
-    var hasLeadRecord = props.getProperty(CONFIG.PROP_PREFIX + thread.getId()) !== null;
+    var hasLeadRecord = findLeadSheetRowByThreadId(thread.getId()) !== null;
 
     if (finalType === "spam")   Logger.log("  ACTION: label as spam, skip");
     else if (finalType === "talent") Logger.log("  ACTION: label as talent, skip");
@@ -359,34 +357,47 @@ function processFollowUps() {
   Logger.log("=== processFollowUps START ===");
   ensureAllSheets();
 
-  var props = PropertiesService.getScriptProperties();
-  var keys = props.getKeys().filter(function(k) {
-    return k.indexOf(CONFIG.PROP_PREFIX) === 0;
-  });
+  var sheet = getSheet("Leads");
+  if (!sheet) { Logger.log("processFollowUps: no Leads sheet found"); return; }
 
+  var rows = sheet.getDataRange().getValues();
+  var map = headerMap(rows[0]);
   var now = new Date().getTime();
+  var thresholds = [CONFIG.FOLLOW_UP_1_HOURS, CONFIG.FOLLOW_UP_2_HOURS, CONFIG.FOLLOW_UP_3_HOURS];
 
-  keys.forEach(function(key) {
-    var data = JSON.parse(props.getProperty(key) || "{}");
+  for (var i = 1; i < rows.length; i++) {
+    // Only rows still waiting for a reply.
+    var status = (val(rows[i], map, "Status") || "").toLowerCase();
+    if (status !== "contacted") continue;
 
-    if (!data.leadEmail || data.replied || data.followUpCount >= 3) {
-      props.deleteProperty(key);
-      return;
-    }
+    var followUpCount = parseInt(val(rows[i], map, "FollowUpCount") || "0", 10) || 0;
+    if (followUpCount >= 3) continue;
 
-    var hoursSince = (now - data.sentAt) / 3600000;
-    var thresholds = [CONFIG.FOLLOW_UP_1_HOURS, CONFIG.FOLLOW_UP_2_HOURS, CONFIG.FOLLOW_UP_3_HOURS];
+    var sentAt = val(rows[i], map, "FollowUpSentAt") || "";
+    if (!sentAt) continue;
+    var sentAtMs = new Date(sentAt).getTime();
+    if (isNaN(sentAtMs)) continue;
 
-    if (hoursSince < thresholds[data.followUpCount]) return;
+    var hoursSince = (now - sentAtMs) / 3600000;
+    if (hoursSince < thresholds[followUpCount]) continue;
 
-    var num = data.followUpCount + 1;
-    var body = generateFollowUp(data, num);
+    var leadEmail = val(rows[i], map, "Email") || "";
+    if (!leadEmail) continue;
 
-    // Always quote Sarah's last sent email to this lead so the follow-up
-    // arrives with the full history below it — just like a standard reply chain.
+    var leadName = val(rows[i], map, "Name") || "";
+    var subject  = val(rows[i], map, "SourceSubject") || "";
+    var brand    = val(rows[i], map, "Brand") || DEFAULT_BRAND;
+    var num      = followUpCount + 1;
+
+    var body = generateFollowUp(
+      { leadEmail: leadEmail, leadName: leadName, subject: subject, brand: brand, followUpCount: followUpCount },
+      num
+    );
+
+    // Quote Sarah's last sent email so the lead sees the full history below the follow-up.
     var quotedContext = "";
     try {
-      var sentSearch = GmailApp.search('in:sent to:' + data.leadEmail, 0, 1);
+      var sentSearch = GmailApp.search('in:sent to:' + leadEmail, 0, 1);
       if (sentSearch.length > 0) {
         var sentMsgs = sentSearch[0].getMessages();
         if (sentMsgs.length > 0) {
@@ -400,29 +411,29 @@ function processFollowUps() {
         }
       }
     } catch(qe) {
-      Logger.log("Follow-up: could not retrieve sent email for context (" + data.leadEmail + "): " + qe);
+      Logger.log("Follow-up: could not retrieve sent email for context (" + leadEmail + "): " + qe);
     }
 
     sendEmail({
-      to: data.leadEmail,
-      subject: subjectWithRe(data.subject),
+      to: leadEmail,
+      subject: subjectWithRe(subject),
       body: body + quotedContext,
       bcc: CONFIG.MANAGER
     });
 
-    logAction(data.leadEmail, data.subject, "lead", "followup_" + num,
-      "", "Follow-up sent.", data.leadEmail, "Lead had not replied after follow-up threshold.");
+    logAction(leadEmail, subject, "lead", "followup_" + num,
+      "", "Follow-up sent.", leadEmail, "Lead had not replied after follow-up threshold.");
 
-    data.followUpCount = num;
-    data.sentAt = now;
+    // Update the row directly (we already have the sheet reference).
+    setByHeader(sheet, i + 1, map, "FollowUpCount",  String(num));
+    setByHeader(sheet, i + 1, map, "FollowUpSentAt", isoNow());
+    setByHeader(sheet, i + 1, map, "LastContact",    isoNow());
 
-    if (data.followUpCount >= 3) {
-      props.deleteProperty(key);
-      updateLeadStatus(data.leadEmail, "no-reply-3-followups", "Closed after 3 follow-ups");
-    } else {
-      props.setProperty(key, JSON.stringify(data));
+    if (num >= 3) {
+      setByHeader(sheet, i + 1, map, "Status", "no-reply-3-followups");
+      setByHeader(sheet, i + 1, map, "Notes",  "Closed after 3 follow-ups with no reply.");
     }
-  });
+  }
 
   Logger.log("=== processFollowUps END ===");
 }
