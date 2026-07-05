@@ -81,3 +81,20 @@ function stripMarkdown(text) {
 function getOrCreateLabel(name) {
   return GmailApp.getUserLabelByName(name) || GmailApp.createLabel(name);
 }
+
+// --- Admin / debug helpers ---
+// Run listLeadProperties() from the Apps Script editor to see all pending
+// follow-up records. Run deleteAllLeadProperties() to wipe them (e.g. after
+// clearing out test leads from Gmail and the spreadsheet).
+function listLeadProperties() {
+  var props = PropertiesService.getScriptProperties().getProperties();
+  Object.keys(props)
+    .filter(function(k) { return k.indexOf(CONFIG.PROP_PREFIX) === 0; })
+    .forEach(function(k) { Logger.log(k + " → " + props[k]); });
+}
+function deleteAllLeadProperties() {
+  var ps = PropertiesService.getScriptProperties();
+  Object.keys(ps.getProperties())
+    .filter(function(k) { return k.indexOf(CONFIG.PROP_PREFIX) === 0; })
+    .forEach(function(k) { ps.deleteProperty(k); Logger.log("Deleted: " + k); });
+}
