@@ -191,6 +191,13 @@ function findSlotByLabel(slotsDetailed, chosenLabel) {
 // market to get misread as EU - keyword order can't tell direction,
 // Claude can.
 function detectTimezoneRegion(text) {
+  // Highest priority: explicit "Country: XX" in a form submission.
+  // This is ground truth — no AI inference needed and it prevents the
+  // Stramasa forwarder address (info@stramasa.com / SG) from polluting
+  // Claude's view of where the lead is located.
+  var formCountry = extractFormCountryRegion(text);
+  if (formCountry) return formCountry;
+
   try {
     var region = detectTimezoneRegionClaude(text);
     if (region && TARGET_TZ[region]) return region;
@@ -198,6 +205,26 @@ function detectTimezoneRegion(text) {
     Logger.log("detectTimezoneRegionClaude failed, falling back to keyword heuristic: " + e);
   }
   return detectTimezoneRegionHeuristic(text);
+}
+
+// Parses an explicit "Country: <value>" line from form-submission emails
+// and maps it to a timezone region code. Returns null if not found or
+// the country value doesn't map to a known region.
+function extractFormCountryRegion(text) {
+  var m = (text || "").match(/Country\s*[:\-]\s*([^\n\r,]{2,50})/i);
+  if (!m) return null;
+  var c = m[1].trim().toLowerCase().replace(/[^a-z ]/g, "").trim();
+
+  if (/^(us|usa|united states|america|u s a|u s|canada|ca)$/.test(c)) return "US";
+  if (/^(uk|gb|united kingdom|england|britain|great britain|northern ireland|scotland|wales|netherlands|nl|germany|de|france|fr|spain|es|italy|it|portugal|pt|belgium|be|austria|at|switzerland|ch|denmark|dk|sweden|se|norway|no|finland|fi|poland|pl|czech|ireland|ie|europe|eu)$/.test(c)) return "EU";
+  if (/^(in|india)$/.test(c)) return "IN";
+  if (/^(sg|singapore)$/.test(c)) return "SG";
+  if (/^(au|australia)$/.test(c)) return "AU";
+  if (/^(jp|japan|kr|south korea|korea)$/.test(c)) return "JP";
+  if (/^(ph|philippines|vn|vietnam|th|thailand|id|indonesia|my|malaysia)$/.test(c)) return "SEA";
+  if (/^(ae|uae|united arab emirates|sa|saudi arabia|ksa|qa|qatar|kw|kuwait|bh|bahrain|om|oman|middle east|me|mena)$/.test(c)) return "ME";
+
+  return null;
 }
 
 function detectTimezoneRegionClaude(text) {

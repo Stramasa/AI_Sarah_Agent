@@ -105,6 +105,7 @@ function _leadRowLookup(keyField, keyValue) {
         brand:         val(rows[i], map, "Brand") || "",
         subject:       val(rows[i], map, "SourceSubject") || "",
         status:        val(rows[i], map, "Status") || "",
+        threadId:      val(rows[i], map, "ThreadId") || "",
         followUpCount: parseInt(val(rows[i], map, "FollowUpCount") || "0", 10) || 0,
         followUpSentAt: val(rows[i], map, "FollowUpSentAt") || "",
         replyCount:    parseInt(val(rows[i], map, "ReplyCount") || "0", 10) || 0
