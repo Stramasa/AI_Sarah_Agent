@@ -141,6 +141,10 @@ function createLeadMeeting(slot, meetingTitle, leadEmail, additionalGuests) {
   if (!leadEmail) throw new Error("No lead email to invite");
 
   var guestList = CONFIG.TEAM_CC.slice();
+  // Explicitly add the calendar owner so they receive the invite notification.
+  // As organizer they create the event, but Google only sends them an email
+  // notification if they are also listed as an attendee.
+  if (guestList.indexOf(CONFIG.CALENDAR_ID) === -1) guestList.push(CONFIG.CALENDAR_ID);
   if (guestList.indexOf(leadEmail) === -1) guestList.push(leadEmail);
 
   // Include any extra guests the lead explicitly mentioned (e.g. a colleague).

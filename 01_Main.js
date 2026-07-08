@@ -159,6 +159,19 @@ function checkLeads() {
     var brand = detectBrand(subject + " " + activeBody + " " + to);
     var hasLeadRecord = findLeadSheetRowByThreadId(threadId) !== null;
 
+    // Email-based fallback: for forwarded form leads, Sarah sends via sendEmail
+    // (new thread), so the lead's reply arrives in a DIFFERENT thread than the
+    // one stored in the Leads sheet. The classifier then sees a back-and-forth
+    // conversation and often returns "client". Guard against that: if the
+    // sender's email is already in the Leads sheet, it's a lead reply regardless
+    // of what the classifier returned.
+    if (!hasLeadRecord && !isKnownForwarder(classifyEmail) && !isInternalEmail(classifyEmail)) {
+      if (findLeadSheetRowByEmail(classifyEmail)) {
+        Logger.log("LEAD MATCH BY EMAIL: " + classifyEmail + " — routing as lead reply (classifier said: " + classification.type + ")");
+        hasLeadRecord = true;
+      }
+    }
+
     logAction(from, subject, classification.type, "pending", "", "", classifyEmail, classification.reason || "");
 
     try {
