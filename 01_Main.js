@@ -386,11 +386,12 @@ function processFollowUps() {
 
     var leadName = val(rows[i], map, "Name") || "";
     var subject  = val(rows[i], map, "SourceSubject") || "";
+    var service  = val(rows[i], map, "Service") || "";
     var brand    = val(rows[i], map, "Brand") || DEFAULT_BRAND;
     var num      = followUpCount + 1;
 
     var body = generateFollowUp(
-      { leadEmail: leadEmail, leadName: leadName, subject: subject, brand: brand, followUpCount: followUpCount },
+      { leadEmail: leadEmail, leadName: leadName, subject: subject, service: service, brand: brand, followUpCount: followUpCount },
       num
     );
 

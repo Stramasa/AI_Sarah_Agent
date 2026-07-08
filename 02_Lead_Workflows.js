@@ -323,7 +323,9 @@ function generateFollowUp(data, num) {
     "You are Sarah, client services at " + data.brand + ".\n" +
     "Write follow-up #" + num + " to a lead who has not replied to your first email.\n" +
     "Tone: " + (tones[num - 1] || tones[2]) + "\n" +
-    "Lead: " + (data.leadName || "there") + " | Topic: " + data.subject + "\n\n" +
+    "Lead: " + (data.leadName || "there") + "\n" +
+    "What they enquired about: " + (data.service || data.subject) + "\n\n" +
+    "Reference what the lead actually asked about, never the email subject line or form name.\n" +
     "Max 45 words. No em dashes. No bullet points. Plain text only.\n" +
     "Sign off: Sarah | " + data.brand + "\n" +
     "Do NOT include calendar slots or a Calendly link in your text — they are appended automatically.\n" +
