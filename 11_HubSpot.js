@@ -8,10 +8,22 @@ function getHubspotPipelines() {
   Logger.log(resp.getContentText());
 }
 
+var HUBSPOT_BRAND_INITIALS = {
+  "Stramasa":              "S",
+  "Axpira":                "A",
+  "Kobelphi":              "K",
+  "The Content Powerhouse":"CP",
+  "Introlynk":             "I",
+  "Vientra":               "V",
+  "Recruitshore":          "R"
+};
+
 function createHubspotDeal(lead) {
   if (!CONFIG.HUBSPOT_TOKEN) { Logger.log("HubSpot: no token configured, skipping"); return null; }
 
-  var dealName = (lead.name || "Unknown") + " - " + (lead.service || "General Inquiry");
+  var brand   = lead.brand || DEFAULT_BRAND;
+  var initial = HUBSPOT_BRAND_INITIALS[brand] || brand.charAt(0).toUpperCase();
+  var dealName = "[" + initial + "] " + (lead.name || "Unknown") + " - " + (lead.service || "General Inquiry");
 
   var payload = {
     properties: {
