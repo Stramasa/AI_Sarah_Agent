@@ -256,9 +256,15 @@ function draftLeadReply(opts) {
     var bookingInstruction;
     if (opts.offeredTime) {
       bookingInstruction =
-        "Lead mentioned: \"" + opts.offeredTime + "\".\n" +
-        "If this maps to one of the coded slots (same day, close enough time), call book_meeting with that slot.\n" +
-        "If it is genuinely vague (e.g. 'mornings', 'next week', a day range), just offer the slots again.\n";
+        "The lead has indicated availability: \"" + opts.offeredTime + "\".\n" +
+        "Look at the available slots below and find the EARLIEST slot whose day and time " +
+        "fall within the lead's offered window (same day of week, and the slot time is " +
+        "inside the range they mentioned). If you find one, call book_meeting with that slot.\n" +
+        "IMPORTANT: if you call book_meeting, the reply_to_lead body must confirm the " +
+        "specific booked time (e.g. 'I've sent a calendar invite for Tuesday 10:00AM CET') — " +
+        "do NOT list calendar slots again in that reply.\n" +
+        "If no available slot falls within the lead's window, reply acknowledging their " +
+        "availability and offer the closest available alternatives.\n";
     } else {
       // No specific time — but check for booking intent words like "I agree",
       // "send me the invite", "let's do it", "confirmed", "that works for me".
@@ -266,7 +272,8 @@ function draftLeadReply(opts) {
         "Lead has not specified an exact time. HOWEVER: if the lead clearly agrees to one of the slots " +
         "previously offered in this conversation (e.g. says 'I agree', 'that works', 'send the invite', " +
         "'confirmed', 'let's do it', 'sounds good') — pick the slot they were most recently offered and " +
-        "call book_meeting for it. If the intent is genuinely ambiguous, just offer the slots again.\n";
+        "call book_meeting for it. If you book, the reply_to_lead body must confirm the booked time and " +
+        "NOT list slots again. If the intent is genuinely ambiguous, just offer the slots again.\n";
     }
 
     userPrompt =
@@ -358,9 +365,11 @@ function generateFollowUp(data, num) {
 
 function extractOfferedTime(body) {
   var prompt =
-    "Does this email confirm a SPECIFIC meeting time with a real date and clock time (e.g. 'Tuesday at 3pm', 'July 8 at 10am ET')? " +
-    "If yes, return it as plain text. " +
-    "If the email only mentions a vague availability like 'next week', 'mornings', 'anytime', or asks for your availability, return exactly: none\n\n" +
+    "Does this email indicate a specific day or time window when the sender is available for a meeting?\n\n" +
+    "Return a short plain-text phrase if the sender names a specific day and/or time range " +
+    "(e.g. 'Tuesday 10AM-3PM CET', 'Monday at 2pm ET', 'Wednesday morning 9-11am').\n" +
+    "Return exactly: none — if the preference is too vague to schedule from " +
+    "('next week', 'mornings', 'anytime', 'I'm generally flexible', 'this week').\n\n" +
     "Email:\n" + (body || "").substring(0, 700);
   try {
     var r = callClaude(prompt, "claude-haiku-4-5-20251001").trim();

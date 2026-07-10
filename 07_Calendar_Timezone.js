@@ -72,15 +72,24 @@ if (tzRegion === "US") {
 var officeOpen;
 
 if (tzRegion === "US") {
-  // For US leads, do not restrict to Asia office hours.
-  // The external ET window already controls professionalism/client suitability.
+  // US leads are in ET (UTC-5/4). Their morning is Manila evening/night,
+  // so constraining to Manila office hours would leave almost nothing.
+  // The external ET window already ensures professional client-side times.
   officeOpen = officeDow >= 1 && officeDow <= 5;
 } else {
+  // Non-US leads (EU, IN, ME, etc.).
+  // Manila is UTC+8. EU (CET) is UTC+1 — a 7-hour gap.
+  //   9AM CET  = 4PM Manila (16) — inside old 9-17 window
+  //  10AM CET  = 5PM Manila (17) — old limit: BLOCKED, new limit: allowed
+  //  12PM CET  = 7PM Manila (19) — allowed with new limit
+  //   1PM CET  = 8PM Manila (20) — blocked at new limit
+  // Extending to 20:00 Manila gives EU clients slots from 9AM to 12:30PM CET,
+  // which covers the bulk of their morning and fixes the "only 9AM slot" bug.
   officeOpen =
     officeDow >= 1 &&
     officeDow <= 5 &&
     officeHour >= 9 &&
-    officeHour < 17;
+    officeHour < 20;
 }
 
         var externalWeekday =
