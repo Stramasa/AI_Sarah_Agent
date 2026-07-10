@@ -183,6 +183,11 @@ function handleLeadReply(thread, memory) {
 
   if (drafted.booking) {
     updateLeadStatus(replyToEmail, "booked", "Meeting booked: " + drafted.booking.start + " (event " + drafted.booking.eventId + ")");
+
+    if (leadRow && leadRow.dealId) {
+      moveHubspotDealStage(leadRow.dealId, CONFIG.HUBSPOT_STAGE_INTRO_MEETING);
+    }
+
     logAction(from, subject, "lead", "meeting_booked", "", replyToEmail,
       "Calendar invite sent for " + drafted.booking.start + ". Guests: " + drafted.booking.guests.join(", "));
     updateMemoryBrief("BOOKING", "Meeting booked for " + replyToEmail + " at " + drafted.booking.start);
@@ -193,6 +198,7 @@ function handleLeadReply(thread, memory) {
     updateMemoryBrief("REPLY", "Lead reply handled for " + replyToEmail + ". Offered time: " + (offeredTime || "none"));
   }
 
+  thread.addLabel(getOrCreateLabel(CONFIG.LABEL_LEAD));
   thread.markRead();
 }
 

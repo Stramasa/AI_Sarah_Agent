@@ -408,6 +408,7 @@ function processFollowUps() {
     var subject  = val(rows[i], map, "SourceSubject") || "";
     var service  = val(rows[i], map, "Service") || "";
     var brand    = val(rows[i], map, "Brand") || DEFAULT_BRAND;
+    var dealId   = val(rows[i], map, "HubSpotDealId") || "";
     var num      = followUpCount + 1;
 
     var body = generateFollowUp(
@@ -444,6 +445,11 @@ function processFollowUps() {
 
     logAction(leadEmail, subject, "lead", "followup_" + num,
       "", "Follow-up sent.", leadEmail, "Lead had not replied after follow-up threshold.");
+
+    // HubSpot: move to Followup stage on the first follow-up only.
+    if (num === 1 && dealId) {
+      moveHubspotDealStage(dealId, CONFIG.HUBSPOT_STAGE_FOLLOWUP);
+    }
 
     // Update the row directly (we already have the sheet reference).
     setByHeader(sheet, i + 1, map, "FollowUpCount",  String(num));

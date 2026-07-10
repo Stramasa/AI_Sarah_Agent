@@ -108,7 +108,8 @@ function _leadRowLookup(keyField, keyValue) {
         threadId:      val(rows[i], map, "ThreadId") || "",
         followUpCount: parseInt(val(rows[i], map, "FollowUpCount") || "0", 10) || 0,
         followUpSentAt: val(rows[i], map, "FollowUpSentAt") || "",
-        replyCount:    parseInt(val(rows[i], map, "ReplyCount") || "0", 10) || 0
+        replyCount:    parseInt(val(rows[i], map, "ReplyCount") || "0", 10) || 0,
+        dealId:        val(rows[i], map, "HubSpotDealId") || ""
       };
     }
   } catch(e) {
