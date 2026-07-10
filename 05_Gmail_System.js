@@ -1,3 +1,176 @@
+// ============================================================
+// Introlynk platform notification handling
+// Detects system emails sent by the IntroLynk platform and
+// sends personalised follow-up emails to the registered user
+// or checkout abandoner, signing as Sarah | Introlynk.
+// ============================================================
+
+function isIntrolynkNotification(subject, body, from) {
+  var text = (subject + " " + body + " " + from).toLowerCase();
+  if (text.indexOf("introlynk") === -1) return false;
+  return (
+    text.indexOf("notification was sent from the introlynk") !== -1 ||
+    text.indexOf("stripe checkout") !== -1 ||
+    text.indexOf("checkout initiated") !== -1 ||
+    text.indexOf("new registration") !== -1 ||
+    text.indexOf("new user registered") !== -1 ||
+    text.indexOf("click date") !== -1
+  );
+}
+
+function parseIntrolynkNotification(subject, body) {
+  var prompt =
+    "Parse this IntroLynk platform notification and return ONLY raw JSON.\n\n" +
+    "notificationType: 'checkout_initiated' if someone clicked to start a Stripe purchase; " +
+    "'registration' if a new user just registered; 'other' otherwise.\n" +
+    "userName: full name of the user.\n" +
+    "userEmail: email address of the user.\n" +
+    "userCompany: company or agency name.\n" +
+    "packageName: name of the package/plan if present.\n" +
+    "amount: price as a string (e.g. '$750'), empty if absent.\n" +
+    "credits: number of credits as a string (e.g. '50'), empty if absent.\n\n" +
+    "Return ONLY raw JSON:\n" +
+    "{\"notificationType\":\"\",\"userName\":\"\",\"userEmail\":\"\",\"userCompany\":\"\"," +
+    "\"packageName\":\"\",\"amount\":\"\",\"credits\":\"\"}\n\n" +
+    "Subject: " + subject + "\nBody:\n" + body.substring(0, 2000);
+  try {
+    return JSON.parse(cleanJson(callClaude(prompt, "claude-haiku-4-5-20251001")));
+  } catch(e) {
+    Logger.log("parseIntrolynkNotification error: " + e);
+    return null;
+  }
+}
+
+function generateIntrolynkFollowUp(parsed, slotsDetailed) {
+  var slotLabels = (slotsDetailed || []).map(function(s) { return s.label; });
+  var slotBlock = slotLabels.length > 0
+    ? "\n\nIf a quick call would help, here are a few open times:\n" + slotLabels.join("\n") +
+      "\n\nOr book here: " + CONFIG.CALENDLY
+    : "\n\nFeel free to book a quick call here: " + CONFIG.CALENDLY;
+
+  var prompt;
+
+  if (parsed.notificationType === "checkout_initiated") {
+    var packageDesc = [
+      parsed.packageName,
+      parsed.credits ? parsed.credits + " credits" : "",
+      parsed.amount  ? "for " + parsed.amount       : ""
+    ].filter(Boolean).join(" — ");
+
+    prompt =
+      "You are Sarah from Introlynk, a B2B lead generation platform.\n" +
+      "A prospect just started the checkout flow but has NOT yet completed payment.\n\n" +
+      "User: " + (parsed.userName || "there") + "\n" +
+      "Company: " + (parsed.userCompany || "") + "\n" +
+      "Package they started: " + (packageDesc || "credits package") + "\n\n" +
+      "Write a short helpful email. Address any hesitation, offer to answer questions, " +
+      "gently encourage completing the purchase. Sound like a real person, not a sales bot.\n" +
+      "Max 60 words before sign-off. No em dashes. No bullet points. Plain text only.\n" +
+      "Sign off: Sarah | Introlynk\n" +
+      "Do NOT include calendar slots or a Calendly link in your text — they are appended automatically.\n" +
+      "Write the email body only.";
+  } else {
+    prompt =
+      "You are Sarah from Introlynk, a B2B lead generation platform.\n" +
+      "A new user just registered on the platform.\n\n" +
+      "User: " + (parsed.userName || "there") + "\n" +
+      "Company: " + (parsed.userCompany || "") + "\n\n" +
+      "Write a brief warm check-in email. Ask if they found what they needed, offer to help " +
+      "them get started on the platform. Sound genuine, not like an automated welcome email.\n" +
+      "Max 55 words before sign-off. No em dashes. No bullet points. Plain text only.\n" +
+      "Sign off: Sarah | Introlynk\n" +
+      "Do NOT include calendar slots or a Calendly link in your text — they are appended automatically.\n" +
+      "Write the email body only.";
+  }
+
+  try {
+    return stripMarkdown(callClaude(prompt, "claude-haiku-4-5-20251001")) + slotBlock;
+  } catch(e) {
+    Logger.log("generateIntrolynkFollowUp error: " + e);
+    return null;
+  }
+}
+
+function handleIntrolynkNotification(thread, subject, body, from) {
+  var parsed = parseIntrolynkNotification(subject, body);
+
+  if (!parsed || !parsed.userEmail) {
+    Logger.log("Introlynk notification: could not extract user email — " + subject);
+    handleUnsureEmail(thread, subject, body, from,
+      "IntroLynk platform notification — could not extract user email. Please review.");
+    return;
+  }
+
+  Logger.log("Introlynk notification: type=" + parsed.notificationType + " | " + parsed.userEmail);
+
+  // Don't re-contact someone already in an active follow-up sequence.
+  var existingLead = findActiveLead(parsed.userEmail);
+  if (existingLead) {
+    appendLeadNote(parsed.userEmail,
+      "Additional IntroLynk notification (" + parsed.notificationType + "): " + subject);
+    logAction(from, subject, "lead", "duplicate_skipped", parsed.userName, parsed.userEmail,
+      "Already in active Introlynk sequence — note appended.");
+    return;
+  }
+
+  // Pass company + full body to timezone detection so area codes and company
+  // names give Claude useful geo context.
+  var tzContext = [parsed.userEmail, parsed.userCompany, body].filter(Boolean).join(" ");
+  var tzRegion   = detectTimezoneRegion(tzContext);
+  var slots      = getAvailableSlotsDetailed(tzRegion);
+
+  var emailBody = generateIntrolynkFollowUp(parsed, slots);
+  if (!emailBody) {
+    handleUnsureEmail(thread, subject, body, from,
+      "IntroLynk notification — follow-up email generation failed. Please review.");
+    return;
+  }
+
+  var emailSubject = parsed.notificationType === "checkout_initiated"
+    ? "Quick question about your Introlynk order"
+    : "Welcome to Introlynk — can I help you get started?";
+
+  sendEmail({
+    to:      parsed.userEmail,
+    subject: emailSubject,
+    body:    emailBody,
+    bcc:     CONFIG.MANAGER
+  });
+
+  var serviceLabel = parsed.notificationType === "checkout_initiated"
+    ? "Credits purchase — " + (parsed.packageName || (parsed.credits + " credits"))
+    : "Platform registration";
+
+  appendObjectRow("Leads", {
+    "Date":              isoNow(),
+    "Name":              parsed.userName  || "",
+    "Email":             parsed.userEmail,
+    "Brand":             "Introlynk",
+    "Service":           serviceLabel,
+    "Status":            "contacted",
+    "LastContact":       isoNow(),
+    "SourceSubject":     subject,
+    "LastEmailDateTime": isoNow(),
+    "LastEmailSubject":  emailSubject,
+    "Notes":             "IntroLynk " + parsed.notificationType + " follow-up sent." +
+                         (parsed.amount ? " Amount: " + parsed.amount + "." : ""),
+    "ThreadId":          thread.getId(),
+    "FollowUpCount":     "0",
+    "FollowUpSentAt":    isoNow()
+  });
+
+  thread.addLabel(getOrCreateLabel(CONFIG.LABEL_LEAD));
+  thread.addLabel(getOrCreateLabel(CONFIG.LABEL_FOLLOWUP));
+  thread.markRead();
+
+  logAction(from, subject, "lead", "introlynk_" + (parsed.notificationType || "notification"),
+    parsed.userName || "", "IntroLynk follow-up sent.", parsed.userEmail,
+    parsed.notificationType + (parsed.amount ? " | Amount: " + parsed.amount : ""));
+  updateMemoryBrief("INTROLYNK",
+    "IntroLynk " + parsed.notificationType + " follow-up → " + parsed.userEmail +
+    (parsed.userCompany ? " (" + parsed.userCompany + ")" : ""));
+}
+
 function handleCalendlyConfirmation(thread, subject, body, from) {
   var info = extractCalendlyInfo(subject, body);
 
@@ -97,6 +270,18 @@ function rescueForwardedLeadsFromSpam() {
     try { GmailApp.search("in:spam is:unread from:" + f + " -label:" + CONFIG.LABEL_PROCESSED, 0, 10).forEach(function(t) { t.moveToInbox(); }); }
     catch(e) { Logger.log("Spam rescue error: " + e); }
   });
+  // Also rescue IntroLynk platform notifications that Gmail may filter as automated mail.
+  try {
+    GmailApp.search('in:spam is:unread "introlynk" -label:' + CONFIG.LABEL_PROCESSED, 0, 10)
+      .forEach(function(t) {
+        var msgs = t.getMessages();
+        var last = msgs[msgs.length - 1];
+        if (isIntrolynkNotification(last.getSubject() || "", last.getPlainBody() || "", last.getFrom() || "")) {
+          t.moveToInbox();
+          Logger.log("Rescued IntroLynk notification from spam: " + last.getSubject());
+        }
+      });
+  } catch(e) { Logger.log("IntroLynk spam rescue error: " + e); }
 }
 function sendEmail(params) {
   var opts = { from: CONFIG.FROM_EMAIL, name: CONFIG.FROM_NAME };

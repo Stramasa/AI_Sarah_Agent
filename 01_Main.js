@@ -75,6 +75,13 @@ function checkLeads() {
       return;
     }
 
+    if (isIntrolynkNotification(subject, activeBody, from)) {
+      handleIntrolynkNotification(thread, subject, activeBody, from);
+      sessionLog.push("IntroLynk notification handled: " + subject);
+      thread.addLabel(processedLabel);
+      return;
+    }
+
     // ---- Determine the real external party --------------------------------
     // For known form forwarders (requests@, groupleads@) and internal team
     // members (pepijn@, sang@, eimee@), extract the real external sender from
