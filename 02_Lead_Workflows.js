@@ -68,6 +68,17 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
     "FollowUpSentAt": isoNow()
   });
 
+  // HubSpot: create the deal, then write the id back onto the row just added.
+  try {
+    var dealId = createHubspotDeal({ name: leadName, service: classification.service_interest, email: leadEmail });
+    if (dealId) {
+      var newRow = findLeadSheetRowByEmail(leadEmail);
+      if (newRow) setByHeader(newRow.sheet, newRow.rowIndex, newRow.map, "HubSpotDealId", dealId);
+    }
+  } catch (hsErr) {
+    Logger.log("HubSpot deal creation error for " + leadEmail + ": " + hsErr);
+  }
+
   thread.addLabel(getOrCreateLabel(CONFIG.LABEL_LEAD));
   thread.addLabel(getOrCreateLabel(CONFIG.LABEL_FOLLOWUP));
   thread.markRead();
