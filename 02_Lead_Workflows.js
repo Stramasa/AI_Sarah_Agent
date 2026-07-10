@@ -255,16 +255,33 @@ function draftLeadReply(opts) {
 
     var bookingInstruction;
     if (opts.offeredTime) {
-      bookingInstruction =
-        "The lead has indicated availability: \"" + opts.offeredTime + "\".\n" +
-        "Look at the available slots below and find the EARLIEST slot whose day and time " +
-        "fall within the lead's offered window (same day of week, and the slot time is " +
-        "inside the range they mentioned). If you find one, call book_meeting with that slot.\n" +
-        "IMPORTANT: if you call book_meeting, the reply_to_lead body must confirm the " +
-        "specific booked time (e.g. 'I've sent a calendar invite for Tuesday 10:00AM CET') — " +
-        "do NOT list calendar slots again in that reply.\n" +
-        "If no available slot falls within the lead's window, reply acknowledging their " +
-        "availability and offer the closest available alternatives.\n";
+      // Try to find a free slot specifically within the lead's offered window.
+      var windowSlot = null;
+      try { windowSlot = findSlotForWindow(opts.offeredTime, opts.tzRegion); } catch(wse) {
+        Logger.log("findSlotForWindow error: " + wse);
+      }
+
+      if (windowSlot) {
+        // Inject the window slot at the front so Claude sees it first.
+        var alreadyPresent = opts.slotsDetailed.some(function(s) { return s.label === windowSlot.label; });
+        if (!alreadyPresent) opts.slotsDetailed = [windowSlot].concat(opts.slotsDetailed);
+
+        bookingInstruction =
+          "The lead is available: \"" + opts.offeredTime + "\".\n" +
+          "A free calendar slot has been found within their window: " + windowSlot.label + ".\n" +
+          "Call book_meeting with exactly this slot label: \"" + windowSlot.label + "\".\n" +
+          "The reply_to_lead body must confirm this specific booked time " +
+          "(e.g. 'I've sent a calendar invite for " + windowSlot.label + "') — " +
+          "do NOT list calendar slots in this reply.\n";
+      } else {
+        bookingInstruction =
+          "The lead indicated availability: \"" + opts.offeredTime + "\".\n" +
+          "Find the earliest slot below that falls within their offered window. " +
+          "If one matches (same day, time within the range), call book_meeting with it. " +
+          "If booking, the reply must confirm the booked time — do NOT list slots again.\n" +
+          "If no slot falls within their window, acknowledge their availability " +
+          "and offer the closest available alternatives or the Calendly link.\n";
+      }
     } else {
       // No specific time — but check for booking intent words like "I agree",
       // "send me the invite", "let's do it", "confirmed", "that works for me".

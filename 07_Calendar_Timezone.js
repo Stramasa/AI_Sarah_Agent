@@ -138,7 +138,96 @@ if (tzRegion === "US") {
   }
 }
 
-// Creates and sends the actual Google Calendar invite on the shared
+// Finds the first free calendar slot on the day/time the lead offered.
+// Bypasses the usedDays one-per-day limit and Manila office-hours check —
+// the lead's window already defines acceptable client-side hours.
+function findSlotForWindow(windowText, tzRegion) {
+  var parsed = parseAvailabilityWindow(windowText);
+  if (!parsed || !parsed.dayName || parsed.startHour === undefined) return null;
+
+  var endHour = (parsed.endHour && parsed.endHour > parsed.startHour)
+    ? parsed.endHour
+    : parsed.startHour + 2;
+
+  var cal = CalendarApp.getCalendarById(CONFIG.CALENDAR_ID);
+  if (!cal) return null;
+
+  var target = TARGET_TZ[tzRegion] || TARGET_TZ.EU;
+  var slotMs  = (CONFIG.SLOT_DURATION_MINUTES || 30) * 60000;
+  var stepMs  = (CONFIG.SLOT_STEP_MINUTES     || 30) * 60000;
+  var now = new Date();
+  var end = new Date(now.getTime() + CONFIG.CALENDAR_DAYS * 86400000);
+
+  var busy = cal.getEvents(now, end).map(function(e) {
+    return { s: e.getStartTime().getTime(), e: e.getEndTime().getTime() };
+  });
+
+  // Utilities "u" returns 1=Mon … 7=Sun. Map to DAY_NAMES index (0=Sun,1=Mon..6=Sat).
+  var DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  var targetDow = DAY_NAMES.indexOf(parsed.dayName);
+  if (targetDow === -1) {
+    Logger.log("findSlotForWindow: unrecognised dayName: " + parsed.dayName);
+    return null;
+  }
+
+  var cursor = new Date(now.getTime() + 4 * 3600000);
+  var safety = 0;
+
+  while (cursor.getTime() < end.getTime() && safety++ < 2000) {
+    var uVal       = parseInt(Utilities.formatDate(cursor, target.zone, "u"), 10);
+    var slotDow    = uVal % 7; // 1%7=1(Mon) … 7%7=0(Sun)
+    var externalHr = parseInt(Utilities.formatDate(cursor, target.zone, "HH"), 10);
+    var externalMn = parseInt(Utilities.formatDate(cursor, target.zone, "mm"), 10);
+
+    if (slotDow !== targetDow) { cursor = new Date(cursor.getTime() + stepMs); continue; }
+
+    var inWindow = (externalHr > parsed.startHour ||
+                    (externalHr === parsed.startHour && externalMn >= 0)) &&
+                   externalHr < endHour;
+
+    if (!inWindow) { cursor = new Date(cursor.getTime() + stepMs); continue; }
+
+    var slotEndMs = cursor.getTime() + slotMs;
+    var isBusy = busy.some(function(b) {
+      return cursor.getTime() < b.e && slotEndMs > b.s;
+    });
+
+    if (!isBusy) {
+      Logger.log("findSlotForWindow: found " +
+        Utilities.formatDate(cursor, target.zone, "EEE d MMM HH:mm") + " " + target.label +
+        " for window: " + windowText);
+      return {
+        label: Utilities.formatDate(cursor, target.zone, "EEE d MMM 'at' h:mma") + " " + target.label,
+        start: new Date(cursor.getTime()),
+        end:   new Date(slotEndMs)
+      };
+    }
+
+    cursor = new Date(cursor.getTime() + stepMs);
+  }
+
+  Logger.log("findSlotForWindow: no free slot found for: " + windowText);
+  return null;
+}
+
+// Uses Claude Haiku to parse "Tuesday 10AM-3PM CET" → {dayName, startHour, endHour}.
+function parseAvailabilityWindow(windowText) {
+  var prompt =
+    "Parse this availability text into JSON.\n" +
+    "Input: \"" + windowText + "\"\n" +
+    "Return ONLY raw JSON with no markdown: {\"dayName\": \"Tuesday\", \"startHour\": 10, \"endHour\": 15}\n" +
+    "dayName: full English day name. startHour and endHour in 24h integers. No other fields.";
+  try {
+    var raw = callClaude(prompt, "claude-haiku-4-5-20251001").trim()
+                .replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "").trim();
+    return JSON.parse(raw);
+  } catch(e) {
+    Logger.log("parseAvailabilityWindow error: " + e + " | input: " + windowText);
+    return null;
+  }
+}
+
+
 // stramasapro calendar. Because Sarah has write access to that calendar
 // (not her own), the event is created directly on it, so stramasapro
 // is the organizer - not sarah.stramasa@gmail.com. Internal team is
