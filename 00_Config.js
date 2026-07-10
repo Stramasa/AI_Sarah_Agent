@@ -18,11 +18,11 @@ var CONFIG = {
   FROM_NAME:       "Sarah Mitchell",
   FROM_EMAIL:      "sarah@stramasa.com",
   MANAGER:         "pepijn@stramasa.com",
-  HUBSPOT_TOKEN:   PropertiesService.getScriptProperties().getProperty("HUBSPOT_TOKEN"),
-  HUBSPOT_PIPELINE_ID: PropertiesService.getScriptProperties().getProperty("HUBSPOT_PIPELINE_ID"),
-  HUBSPOT_STAGE_NEW_LEAD: PropertiesService.getScriptProperties().getProperty("HUBSPOT_STAGE_NEW_LEAD"),
-  HUBSPOT_STAGE_FOLLOWUP: PropertiesService.getScriptProperties().getProperty("HUBSPOT_STAGE_FOLLOWUP"),
-  HUBSPOT_STAGE_INTRO_MEETING: PropertiesService.getScriptProperties().getProperty("HUBSPOT_STAGE_INTRO_MEETING"),
+  HUBSPOT_TOKEN:               PropertiesService.getScriptProperties().getProperty("HUBSPOT_TOKEN"),
+  HUBSPOT_PIPELINE_ID:         "default",
+  HUBSPOT_STAGE_NEW_LEAD:      "138242010",
+  HUBSPOT_STAGE_FOLLOWUP:      "645645261",
+  HUBSPOT_STAGE_INTRO_MEETING: "appointmentscheduled",
   // Always BCC'd on every outbound Sarah email (team visibility).
   ALWAYS_BCC:      ["sang@stramasa.com"],
   // Who receives escalations (difficult leads, unsure emails, bounces, errors).
