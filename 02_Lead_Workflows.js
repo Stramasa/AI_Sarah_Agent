@@ -112,7 +112,6 @@ function handleLeadReply(thread, memory) {
   var messages = thread.getMessages();
   var threadId = thread.getId();
 
-  // Find the last message from the external lead — not Sarah, not internal team.
   var lastMsg = null;
   for (var i = messages.length - 1; i >= 0; i--) {
     var mEmail = extractEmail(messages[i].getFrom() || "");
@@ -130,8 +129,6 @@ function handleLeadReply(thread, memory) {
   var body = lastMsg.getPlainBody() || "";
   var subject = lastMsg.getSubject() || "";
 
-  // Find lead data from the Leads sheet. Try threadId first (direct inbound leads);
-  // fall back to email for forwarded leads where the reply arrives in a different thread.
   var fromEmail = extractEmail(from);
   var leadRow = findLeadSheetRowByThreadId(threadId) || findLeadSheetRowByEmail(fromEmail);
 
@@ -177,14 +174,11 @@ function handleLeadReply(thread, memory) {
 
   sendReplyToMessage(lastMsg, drafted.body, { bcc: CONFIG.MANAGER });
 
-  // Increment reply count in the sheet.
   replyCount = replyCount + 1;
   if (leadRow) {
     setByHeader(leadRow.sheet, leadRow.rowIndex, leadRow.map, "ReplyCount", String(replyCount));
   }
 
-  // After LEAD_ESCALATE_AFTER_ROUNDS back-and-forths with no booking,
-  // quietly notify the team so a human can decide whether to step in.
   var threshold = CONFIG.LEAD_ESCALATE_AFTER_ROUNDS || 3;
   if (!drafted.booking && replyCount >= threshold) {
     try {
@@ -204,6 +198,13 @@ function handleLeadReply(thread, memory) {
 
   if (drafted.booking) {
     updateLeadStatus(replyToEmail, "booked", "Meeting booked: " + drafted.booking.start + " (event " + drafted.booking.eventId + ")");
+
+    // HubSpot: move to Intro Meeting stage. Combined with the FOLLOWUP label removal
+    // below, this is also the "stop follow-ups" signal.
+    if (leadRow && leadRow.dealId) {
+      moveHubspotDealStage(leadRow.dealId, CONFIG.HUBSPOT_STAGE_INTRO_MEETING);
+    }
+
     logAction(from, subject, "lead", "meeting_booked", "", replyToEmail,
       "Calendar invite sent for " + drafted.booking.start + ". Guests: " + drafted.booking.guests.join(", "));
     updateMemoryBrief("BOOKING", "Meeting booked for " + replyToEmail + " at " + drafted.booking.start);
@@ -214,6 +215,7 @@ function handleLeadReply(thread, memory) {
     updateMemoryBrief("REPLY", "Lead reply handled for " + replyToEmail + ". Offered time: " + (offeredTime || "none"));
   }
 
+  thread.addLabel(getOrCreateLabel(CONFIG.LABEL_LEAD));
   thread.markRead();
 }
 
