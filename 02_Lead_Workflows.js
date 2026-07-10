@@ -12,9 +12,6 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
     return;
   }
 
-  // Duplicate detection: the same person often submits both the popup and the
-  // contact form. Check script properties (active sequence) and the Leads sheet
-  // (contacted within 14 days) before doing anything — no email, no new row.
   var existingLead = findActiveLead(leadEmail);
   if (existingLead) {
     Logger.log("DUPLICATE LEAD: " + leadEmail + " already contacted. Skipping thread " + threadId);
@@ -47,9 +44,44 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
   if (forwardedByEmail) {
     sendEmail({ to: leadEmail, subject: drafted.subject, body: drafted.body, bcc: bccList.join(",") });
   } else {
-    // Direct inbound: reply in-thread so the lead's next reply lands in the same thread.
     sendReplyToMessage(msg, drafted.body, { bcc: bccList.join(",") });
   }
+
+  appendObjectRow("Leads", {
+    "Date": isoNow(),
+    "Name": leadName,
+    "Email": leadEmail,
+    "Brand": brand,
+    "Service": classification.service_interest || "",
+    "Status": "contacted",
+    "LastContact": isoNow(),
+    "SourceSubject": subject,
+    "LastEmailDateTime": isoNow(),
+    "LastEmailSubject": subject,
+    "Notes": "Initial Sarah reply sent. TZ: " + tzRegion,
+    "ThreadId": threadId,
+    "FollowUpCount": "0",
+    "FollowUpSentAt": isoNow()
+  });
+
+  // HubSpot: create the deal, then write the id back onto the row just added.
+  try {
+    var dealId = createHubspotDeal({ name: leadName, service: classification.service_interest, email: leadEmail });
+    if (dealId) {
+      var newRow = findLeadSheetRowByEmail(leadEmail);
+      if (newRow) setByHeader(newRow.sheet, newRow.rowIndex, newRow.map, "HubSpotDealId", dealId);
+    }
+  } catch (hsErr) {
+    Logger.log("HubSpot deal creation error for " + leadEmail + ": " + hsErr);
+  }
+
+  thread.addLabel(getOrCreateLabel(CONFIG.LABEL_LEAD));
+  thread.addLabel(getOrCreateLabel(CONFIG.LABEL_FOLLOWUP));
+  thread.markRead();
+
+  updateMemoryBrief("LEAD", "New lead " + leadName + " <" + leadEmail + "> for " + brand + ": " + (classification.service_interest || "unspecified service"));
+  logAction(from, subject, "lead", "replied", "", leadEmail, "Initial reply sent with coded calendar slots");
+}
 
   appendObjectRow("Leads", {
     "Date": isoNow(),
