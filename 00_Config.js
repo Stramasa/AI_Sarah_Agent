@@ -18,6 +18,11 @@ var CONFIG = {
   FROM_NAME:       "Sarah Mitchell",
   FROM_EMAIL:      "sarah@stramasa.com",
   MANAGER:         "pepijn@stramasa.com",
+  HUBSPOT_TOKEN:   PropertiesService.getScriptProperties().getProperty("HUBSPOT_TOKEN"),
+  HUBSPOT_PIPELINE_ID: PropertiesService.getScriptProperties().getProperty("HUBSPOT_PIPELINE_ID"),
+  HUBSPOT_STAGE_NEW_LEAD: PropertiesService.getScriptProperties().getProperty("HUBSPOT_STAGE_NEW_LEAD"),
+  HUBSPOT_STAGE_FOLLOWUP: PropertiesService.getScriptProperties().getProperty("HUBSPOT_STAGE_FOLLOWUP"),
+  HUBSPOT_STAGE_INTRO_MEETING: PropertiesService.getScriptProperties().getProperty("HUBSPOT_STAGE_INTRO_MEETING"),
   // Always BCC'd on every outbound Sarah email (team visibility).
   ALWAYS_BCC:      ["sang@stramasa.com"],
   // Who receives escalations (difficult leads, unsure emails, bounces, errors).
@@ -26,7 +31,7 @@ var CONFIG = {
   // After this many lead reply rounds with no booking, notify the team.
   LEAD_ESCALATE_AFTER_ROUNDS: 3,
   CALENDLY:        "https://calendly.com/stramasa-agency/30min",
-    // Sarah Worksheet
+  // Sarah Worksheet
   SHEET_ID:        "1D15TRhL92fgQqV1liNpRZCmWxTL6RzbDj3qiiXAplt4",
   // Existing Sarah instructions Google Doc.
   INSTRUCTIONS_FILE_ID: "1rCEUd8spBrEYHjCvChv8rvNYcAeOO7S3No-oLs2dbwc",
@@ -87,7 +92,7 @@ var TARGET_TZ = {
 };
 
 var SHEET_HEADERS = {
-  "Leads": ["Date", "Name", "Email", "Brand", "Service", "Status", "LastContact", "SourceSubject", "LastEmailDateTime", "LastEmailSubject", "Notes", "ThreadId", "FollowUpCount", "FollowUpSentAt", "ReplyCount"],
+  "Leads": ["Date", "Name", "Email", "Brand", "Service", "Status", "LastContact", "SourceSubject", "LastEmailDateTime", "LastEmailSubject", "Notes", "ThreadId", "FollowUpCount", "FollowUpSentAt", "HubSpotDealId", "ReplyCount"],
   "Log": ["Timestamp", "From", "Subject", "Classification", "Action", "Related Client", "Related Email", "Notes"],
   "Team": ["Name", "Email", "Timezone", "Role and Skills"],
   "Client Directory": ["Client Name", "Company", "Contacts", "Email", "Timezone", "Projects", "Status", "Priority", "Important Notes", "Last Email Subject", "Last Email DateTime", "Sarah Action", "Next Action"],
