@@ -12,6 +12,9 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
     return;
   }
 
+  // Duplicate detection: the same person often submits both the popup and the
+  // contact form. Check script properties (active sequence) and the Leads sheet
+  // (contacted within 14 days) before doing anything — no email, no new row.
   var existingLead = findActiveLead(leadEmail);
   if (existingLead) {
     Logger.log("DUPLICATE LEAD: " + leadEmail + " already contacted. Skipping thread " + threadId);
@@ -44,44 +47,9 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
   if (forwardedByEmail) {
     sendEmail({ to: leadEmail, subject: drafted.subject, body: drafted.body, bcc: bccList.join(",") });
   } else {
+    // Direct inbound: reply in-thread so the lead's next reply lands in the same thread.
     sendReplyToMessage(msg, drafted.body, { bcc: bccList.join(",") });
   }
-
-  appendObjectRow("Leads", {
-    "Date": isoNow(),
-    "Name": leadName,
-    "Email": leadEmail,
-    "Brand": brand,
-    "Service": classification.service_interest || "",
-    "Status": "contacted",
-    "LastContact": isoNow(),
-    "SourceSubject": subject,
-    "LastEmailDateTime": isoNow(),
-    "LastEmailSubject": subject,
-    "Notes": "Initial Sarah reply sent. TZ: " + tzRegion,
-    "ThreadId": threadId,
-    "FollowUpCount": "0",
-    "FollowUpSentAt": isoNow()
-  });
-
-  // HubSpot: create the deal, then write the id back onto the row just added.
-  try {
-    var dealId = createHubspotDeal({ name: leadName, service: classification.service_interest, email: leadEmail });
-    if (dealId) {
-      var newRow = findLeadSheetRowByEmail(leadEmail);
-      if (newRow) setByHeader(newRow.sheet, newRow.rowIndex, newRow.map, "HubSpotDealId", dealId);
-    }
-  } catch (hsErr) {
-    Logger.log("HubSpot deal creation error for " + leadEmail + ": " + hsErr);
-  }
-
-  thread.addLabel(getOrCreateLabel(CONFIG.LABEL_LEAD));
-  thread.addLabel(getOrCreateLabel(CONFIG.LABEL_FOLLOWUP));
-  thread.markRead();
-
-  updateMemoryBrief("LEAD", "New lead " + leadName + " <" + leadEmail + "> for " + brand + ": " + (classification.service_interest || "unspecified service"));
-  logAction(from, subject, "lead", "replied", "", leadEmail, "Initial reply sent with coded calendar slots");
-}
 
   appendObjectRow("Leads", {
     "Date": isoNow(),
@@ -112,6 +80,7 @@ function handleLeadReply(thread, memory) {
   var messages = thread.getMessages();
   var threadId = thread.getId();
 
+  // Find the last message from the external lead — not Sarah, not internal team.
   var lastMsg = null;
   for (var i = messages.length - 1; i >= 0; i--) {
     var mEmail = extractEmail(messages[i].getFrom() || "");
@@ -129,6 +98,8 @@ function handleLeadReply(thread, memory) {
   var body = lastMsg.getPlainBody() || "";
   var subject = lastMsg.getSubject() || "";
 
+  // Find lead data from the Leads sheet. Try threadId first (direct inbound leads);
+  // fall back to email for forwarded leads where the reply arrives in a different thread.
   var fromEmail = extractEmail(from);
   var leadRow = findLeadSheetRowByThreadId(threadId) || findLeadSheetRowByEmail(fromEmail);
 
@@ -174,11 +145,14 @@ function handleLeadReply(thread, memory) {
 
   sendReplyToMessage(lastMsg, drafted.body, { bcc: CONFIG.MANAGER });
 
+  // Increment reply count in the sheet.
   replyCount = replyCount + 1;
   if (leadRow) {
     setByHeader(leadRow.sheet, leadRow.rowIndex, leadRow.map, "ReplyCount", String(replyCount));
   }
 
+  // After LEAD_ESCALATE_AFTER_ROUNDS back-and-forths with no booking,
+  // quietly notify the team so a human can decide whether to step in.
   var threshold = CONFIG.LEAD_ESCALATE_AFTER_ROUNDS || 3;
   if (!drafted.booking && replyCount >= threshold) {
     try {
@@ -198,13 +172,6 @@ function handleLeadReply(thread, memory) {
 
   if (drafted.booking) {
     updateLeadStatus(replyToEmail, "booked", "Meeting booked: " + drafted.booking.start + " (event " + drafted.booking.eventId + ")");
-
-    // HubSpot: move to Intro Meeting stage. Combined with the FOLLOWUP label removal
-    // below, this is also the "stop follow-ups" signal.
-    if (leadRow && leadRow.dealId) {
-      moveHubspotDealStage(leadRow.dealId, CONFIG.HUBSPOT_STAGE_INTRO_MEETING);
-    }
-
     logAction(from, subject, "lead", "meeting_booked", "", replyToEmail,
       "Calendar invite sent for " + drafted.booking.start + ". Guests: " + drafted.booking.guests.join(", "));
     updateMemoryBrief("BOOKING", "Meeting booked for " + replyToEmail + " at " + drafted.booking.start);
@@ -215,7 +182,6 @@ function handleLeadReply(thread, memory) {
     updateMemoryBrief("REPLY", "Lead reply handled for " + replyToEmail + ". Offered time: " + (offeredTime || "none"));
   }
 
-  thread.addLabel(getOrCreateLabel(CONFIG.LABEL_LEAD));
   thread.markRead();
 }
 

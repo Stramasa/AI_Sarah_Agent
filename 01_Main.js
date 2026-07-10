@@ -386,6 +386,7 @@ function processFollowUps() {
   var thresholds = [CONFIG.FOLLOW_UP_1_HOURS, CONFIG.FOLLOW_UP_2_HOURS, CONFIG.FOLLOW_UP_3_HOURS];
 
   for (var i = 1; i < rows.length; i++) {
+    // Only rows still waiting for a reply.
     var status = (val(rows[i], map, "Status") || "").toLowerCase();
     if (status !== "contacted") continue;
 
@@ -407,7 +408,6 @@ function processFollowUps() {
     var subject  = val(rows[i], map, "SourceSubject") || "";
     var service  = val(rows[i], map, "Service") || "";
     var brand    = val(rows[i], map, "Brand") || DEFAULT_BRAND;
-    var dealId   = val(rows[i], map, "HubSpotDealId") || "";
     var num      = followUpCount + 1;
 
     var body = generateFollowUp(
@@ -415,6 +415,7 @@ function processFollowUps() {
       num
     );
 
+    // Quote Sarah's last sent email so the lead sees the full history below the follow-up.
     var quotedContext = "";
     try {
       var sentSearch = GmailApp.search('in:sent to:' + leadEmail, 0, 1);
@@ -441,14 +442,10 @@ function processFollowUps() {
       bcc: CONFIG.MANAGER
     });
 
-    // HubSpot: move to Followup stage on the first follow-up only.
-    if (num === 1 && dealId) {
-      moveHubspotDealStage(dealId, CONFIG.HUBSPOT_STAGE_FOLLOWUP);
-    }
-
     logAction(leadEmail, subject, "lead", "followup_" + num,
       "", "Follow-up sent.", leadEmail, "Lead had not replied after follow-up threshold.");
 
+    // Update the row directly (we already have the sheet reference).
     setByHeader(sheet, i + 1, map, "FollowUpCount",  String(num));
     setByHeader(sheet, i + 1, map, "FollowUpSentAt", isoNow());
     setByHeader(sheet, i + 1, map, "LastContact",    isoNow());
