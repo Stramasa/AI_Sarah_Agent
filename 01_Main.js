@@ -35,6 +35,24 @@ function checkLeads() {
 
     Logger.log("--- THREAD: " + subject + " | from=" + from + " | msgs=" + messages.length);
 
+    // ---- Partner-resale decision reply check (12_Partner_Reselling.js) ----
+    // If this thread is a "pending_decision" resale escalation and the last
+    // message is from pepijn/sang, handle the YES/NO decision here and stop —
+    // before any of the normal forwarder/classification logic runs.
+    if (isInternalEmail(fromEmail) && fromEmail !== CONFIG.FROM_EMAIL) {
+      var resaleHandled = false;
+      try {
+        resaleHandled = handlePartnerResaleDecisionReply(thread, activeMsg, fromEmail);
+      } catch (rse) {
+        Logger.log("handlePartnerResaleDecisionReply error: " + rse);
+      }
+      if (resaleHandled) {
+        thread.addLabel(processedLabel);
+        thread.markRead();
+        return;
+      }
+    }
+
     // If the last message is from Sarah (she already replied), look backwards for
     // the most recent external lead message. This handles SarahNeedsReview
     // re-runs and cases where a fallback reply was sent instead of a real one.
@@ -188,12 +206,31 @@ function checkLeads() {
         sessionLog.push("Known lead reply handled: " + subject);
 
       } else if (classification.type === "lead") {
-        handleNewLead(
-          thread, activeMsg, classification, brand,
-          buildSarahContext("lead", activeBody, instructions, knowledge),
-          isForwardedByTeam ? forwardedByEmail : null
-        );
-        sessionLog.push("New lead replied to: " + subject);
+        // ---- Partner resale check (12_Partner_Reselling.js) ----------------
+        // Before Sarah reaches out to a brand-new lead, check whether it
+        // qualifies to be resold to a partner (Mach Media, Whyfive, etc).
+        // If it qualifies, Sarah parks the lead and emails pepijn+sang for a
+        // decision instead of contacting the lead herself.
+        var resaleStarted = false;
+        try {
+          resaleStarted = maybeStartPartnerResale(
+            thread, activeMsg, classification, brand,
+            isForwardedByTeam ? forwardedByEmail : null
+          );
+        } catch (rsErr) {
+          Logger.log("maybeStartPartnerResale error: " + rsErr);
+        }
+
+        if (resaleStarted) {
+          sessionLog.push("New lead parked for partner-resale decision: " + subject);
+        } else {
+          handleNewLead(
+            thread, activeMsg, classification, brand,
+            buildSarahContext("lead", activeBody, instructions, knowledge),
+            isForwardedByTeam ? forwardedByEmail : null
+          );
+          sessionLog.push("New lead replied to: " + subject);
+        }
 
       } else if (classification.type === "client") {
         // Client emails always go to handleClientEmail for internal tracking.
@@ -364,7 +401,7 @@ function debugCheckLeads() {
     if (finalType === "spam")   Logger.log("  ACTION: label as spam, skip");
     else if (finalType === "talent") Logger.log("  ACTION: label as talent, skip");
     else if (messages.length > 1 && hasLeadRecord) Logger.log("  ACTION: handleLeadReply");
-    else if (finalType === "lead")   Logger.log("  ACTION: handleNewLead -> reply with calendar slots");
+    else if (finalType === "lead")   Logger.log("  ACTION: maybeStartPartnerResale -> handleNewLead if not parked");
     else if (finalType === "client" && isTeamFwd) Logger.log("  ACTION: handleSchedulingForward -> reply with slots");
     else if (finalType === "client") Logger.log("  ACTION: handleClientEmail -> internal tracking only");
     else Logger.log("  ACTION: handleUnsureEmail -> forward to manager");
