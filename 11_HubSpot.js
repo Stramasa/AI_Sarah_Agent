@@ -203,3 +203,80 @@ function moveHubspotDealStage(dealId, stageId) {
     Logger.log("HubSpot stage move error: " + e);
   }
 }
+
+// Returns the current dealstage id for a deal, or null on failure.
+function getHubspotDealStage(dealId) {
+  if (!CONFIG.HUBSPOT_TOKEN || !dealId) return null;
+  try {
+    var resp = UrlFetchApp.fetch(
+      "https://api.hubapi.com/crm/v3/objects/deals/" + dealId + "?properties=dealstage",
+      {
+        headers: { Authorization: "Bearer " + CONFIG.HUBSPOT_TOKEN },
+        muteHttpExceptions: true
+      }
+    );
+    var json = JSON.parse(resp.getContentText());
+    return (json.properties && json.properties.dealstage) || null;
+  } catch (e) {
+    Logger.log("HubSpot getStage error: " + e);
+    return null;
+  }
+}
+
+// Stage ordering used to ensure Sarah only moves deals FORWARD, never backwards.
+// Stages Sarah never touches (pre_proposal, proposal_present, verbal+) are included
+// only so the ordering check works correctly — they will never be passed as targetStage.
+var HUBSPOT_STAGE_ORDER = [
+  CONFIG.HUBSPOT_STAGE_NEW_LEAD,          // 1
+  CONFIG.HUBSPOT_STAGE_FOLLOWUP,          // 2
+  CONFIG.HUBSPOT_STAGE_INTRO_MEETING,     // 3
+  CONFIG.HUBSPOT_STAGE_PRE_PROPOSAL,      // 4  (FYI only)
+  CONFIG.HUBSPOT_STAGE_CREATE_PROPOSAL,   // 5
+  CONFIG.HUBSPOT_STAGE_PROPOSAL_PRESENT,  // 6  (FYI only)
+  CONFIG.HUBSPOT_STAGE_PROPOSAL_SENT,     // 7
+  CONFIG.HUBSPOT_STAGE_FOLLOWUP_PROPOSAL, // 8
+  CONFIG.HUBSPOT_STAGE_NEGOTIATION,       // 9
+  CONFIG.HUBSPOT_STAGE_VERBAL            // 10+ — Sarah never moves here
+];
+
+// Moves a deal to targetStage only if targetStage is further along the pipeline
+// than the deal's current stage. Skips silently if already at or beyond target.
+// Returns true if a move was made, false otherwise.
+function advanceHubspotDealStage(dealId, targetStage) {
+  if (!dealId || !targetStage) return false;
+
+  var current = getHubspotDealStage(dealId);
+  if (!current) {
+    Logger.log("HubSpot advanceStage: could not read current stage for deal " + dealId);
+    return false;
+  }
+
+  var currentIdx = HUBSPOT_STAGE_ORDER.indexOf(current);
+  var targetIdx  = HUBSPOT_STAGE_ORDER.indexOf(targetStage);
+
+  if (currentIdx === -1 || targetIdx === -1) {
+    // Unknown stage — log and skip rather than blindly moving
+    Logger.log("HubSpot advanceStage: unknown stage id. current=" + current + " target=" + targetStage);
+    return false;
+  }
+
+  if (targetIdx <= currentIdx) {
+    Logger.log("HubSpot advanceStage: deal " + dealId + " already at or beyond target (" + current + " >= " + targetStage + "), skipping");
+    return false;
+  }
+
+  moveHubspotDealStage(dealId, targetStage);
+  Logger.log("HubSpot advanceStage: moved deal " + dealId + " from " + current + " to " + targetStage);
+  return true;
+}
+
+// Maps the signal names Claude returns from the hubspot_advance_stage tool
+// to actual stage IDs.  Signals Sarah is allowed to act on are listed here;
+// any signal not in this map is ignored so Sarah can never accidentally move
+// a deal to verbal/won/lost/etc.
+var HUBSPOT_SIGNAL_MAP = {
+  "create_proposal":   CONFIG.HUBSPOT_STAGE_CREATE_PROPOSAL,
+  "proposal_sent":     CONFIG.HUBSPOT_STAGE_PROPOSAL_SENT,
+  "followup_proposal": CONFIG.HUBSPOT_STAGE_FOLLOWUP_PROPOSAL,
+  "negotiation":       CONFIG.HUBSPOT_STAGE_NEGOTIATION
+};

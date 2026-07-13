@@ -20,9 +20,27 @@ var CONFIG = {
   MANAGER:         "pepijn@stramasa.com",
   HUBSPOT_TOKEN:               PropertiesService.getScriptProperties().getProperty("HUBSPOT_TOKEN"),
   HUBSPOT_PIPELINE_ID:         "default",
-  HUBSPOT_STAGE_NEW_LEAD:      "138242010",
-  HUBSPOT_STAGE_FOLLOWUP:      "645645261",
-  HUBSPOT_STAGE_INTRO_MEETING: "appointmentscheduled",
+  // ---- HubSpot pipeline stages (in order) ----
+  // Stage 1 — new inbound lead
+  HUBSPOT_STAGE_NEW_LEAD:           "138242010",
+  // Stage 2 — follow-up sent after no reply
+  HUBSPOT_STAGE_FOLLOWUP:           "645645261",
+  // Stage 3 — intro meeting scheduled (Sarah books this)
+  HUBSPOT_STAGE_INTRO_MEETING:      "appointmentscheduled",
+  // Stage 4 — waiting for info from lead before proposal (Sarah skips to here only if needed, not actionable on its own)
+  HUBSPOT_STAGE_PRE_PROPOSAL:       "1260644572",
+  // Stage 5 — proposal being created / confirmed we will write one (Sarah can move here)
+  HUBSPOT_STAGE_CREATE_PROPOSAL:    "qualifiedtobuy",
+  // Stage 6 — proposal presentation / will be presented (not actionable for Sarah)
+  HUBSPOT_STAGE_PROPOSAL_PRESENT:   "688024508",
+  // Stage 7 — proposal sent to lead (Sarah can move here when she sees proposal was sent)
+  HUBSPOT_STAGE_PROPOSAL_SENT:      "1356183799",
+  // Stage 8 — following up after proposal, no reply yet (Sarah can move here)
+  HUBSPOT_STAGE_FOLLOWUP_PROPOSAL:  "156123103",
+  // Stage 9 — contract negotiation / active back-and-forth on scope/pricing (Sarah can move here)
+  HUBSPOT_STAGE_NEGOTIATION:        "1311414492",
+  // Stage 10+ — verbal decision, won, lost, postponed, churn — Sarah never touches these
+  HUBSPOT_STAGE_VERBAL:             "decisionmakerboughtin",
   // Always BCC'd on every outbound Sarah email (team visibility).
   ALWAYS_BCC:      ["sang@stramasa.com"],
   // Who receives escalations (difficult leads, unsure emails, bounces, errors).

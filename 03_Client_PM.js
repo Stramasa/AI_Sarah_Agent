@@ -18,6 +18,26 @@ function handleClientEmail(thread, msg, memory) {
   updatePMFromClientEmail(clientName, clientEmail, subject, action);
   maybeNotifyTeamOwner(clientName, clientData, action, subject, body, clientEmail);
 
+  // HubSpot pipeline stage advance — only fires when Claude explicitly signalled
+  // a stage transition via the hubspot_advance_stage tool. Looks up the deal by
+  // the lead's email so it works for both active leads and known-client threads.
+  if (action.hubspot_stage_signal) {
+    var targetStage = HUBSPOT_SIGNAL_MAP[action.hubspot_stage_signal];
+    if (targetStage) {
+      var leadRow = findLeadSheetRowByEmail(clientEmail);
+      var dealId = leadRow ? leadRow.dealId : null;
+      if (dealId) {
+        var moved = advanceHubspotDealStage(dealId, targetStage);
+        Logger.log("HubSpot stage signal '" + action.hubspot_stage_signal + "' for " + clientEmail +
+          " (deal " + dealId + "): " + (moved ? "advanced" : "already at/beyond target") +
+          " — reason: " + (action.hubspot_stage_reason || ""));
+      } else {
+        Logger.log("HubSpot stage signal '" + action.hubspot_stage_signal + "' for " + clientEmail +
+          " but no dealId found in Leads sheet — skipping");
+      }
+    }
+  }
+
   if (action.escalate === true) {
     handleUnsureEmail(
       thread,
@@ -59,8 +79,12 @@ function orchestrateClientEmail(body, subject, clientData, teamContext, pmContex
 
   var system =
     "You are Sarah, the internal operations coordinator for Stramasa Group. " +
-    "You are processing an EXISTING CLIENT email. Sarah NEVER replies to clients - she only " +
-    "updates internal tracking and coordinates the team via the tools available to you.";
+    "You are processing an EXISTING CLIENT or PROSPECT email. Sarah NEVER replies to clients - she only " +
+    "updates internal tracking and coordinates the team via the tools available to you. " +
+    "You also monitor the sales pipeline. If the email clearly signals that a deal has reached a new stage " +
+    "(a proposal is being created, a proposal was sent, the team is following up on a sent proposal, or the " +
+    "prospect is actively negotiating scope/pricing), call hubspot_advance_stage with the matching signal. " +
+    "Only call it when the evidence in the email is clear and unambiguous — never speculatively.";
 
   var userPrompt =
     "Client context:\n" + clientCtx + "\n\n" +
@@ -72,7 +96,9 @@ function orchestrateClientEmail(body, subject, clientData, teamContext, pmContex
     "Always call log_client_update at minimum. Only call notify_team_member if someone genuinely " +
     "needs to do work - not for purely informational emails (thanks, acknowledged, received). " +
     "Only call escalate_to_manager if ownership or responsibility is unclear, or the situation needs " +
-    "human judgment. You may call more than one tool if the situation calls for it.";
+    "human judgment. Call hubspot_advance_stage only when there is clear, unambiguous evidence in this " +
+    "email that the deal has reached a specific stage (proposal being created, proposal sent, following up " +
+    "on proposal, or active negotiation). You may call more than one tool if the situation calls for it.";
 
   var defaults = {
     action: "log_only",
@@ -128,6 +154,12 @@ function mergeClientToolCalls(toolCalls, defaults) {
       var esc = call.input || {};
       action.escalate = true;
       action.reason = esc.reason || action.reason;
+    }
+
+    if (call.name === "hubspot_advance_stage") {
+      var hs = call.input || {};
+      action.hubspot_stage_signal = hs.stage_signal || "";
+      action.hubspot_stage_reason = hs.reason || "";
     }
   });
 

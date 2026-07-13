@@ -99,6 +99,34 @@ var CLIENT_TOOLS = [
       },
       required: ["reason"]
     }
+  },
+  {
+    name: "hubspot_advance_stage",
+    description:
+      "Signal that the HubSpot deal for this lead/prospect should be advanced to a specific pipeline stage " +
+      "based on clear evidence in the email. Only call this when the email clearly indicates the business has " +
+      "reached that stage — do NOT guess or advance speculatively. " +
+      "Signal meanings: " +
+      "'create_proposal' = the team has confirmed they will write / are writing a proposal for this prospect. " +
+      "'proposal_sent' = a proposal has been sent to the prospect (Sarah is CC'd or the email explicitly confirms it). " +
+      "'followup_proposal' = team is following up on a sent proposal that received no reply yet. " +
+      "'negotiation' = prospect has come back with questions, pricing discussion, scope changes, or counter-offers — active deal conversation. " +
+      "Do NOT call this for vague mentions, internal planning, or anything that is not a clear stage signal.",
+    input_schema: {
+      type: "object",
+      properties: {
+        stage_signal: {
+          type: "string",
+          enum: ["create_proposal", "proposal_sent", "followup_proposal", "negotiation"],
+          description: "Which pipeline stage this email signals the deal has reached."
+        },
+        reason: {
+          type: "string",
+          description: "One sentence explaining why this email clearly indicates this stage."
+        }
+      },
+      required: ["stage_signal", "reason"]
+    }
   }
 ];
 
