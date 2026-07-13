@@ -283,6 +283,28 @@ function rescueForwardedLeadsFromSpam() {
       });
   } catch(e) { Logger.log("IntroLynk spam rescue error: " + e); }
 }
+// Converts a plain-text email body to a clean HTML version.
+// Paragraphs are separated by blank lines; single newlines become <br>.
+// The plain-text body is always kept as the fallback for clients that
+// strip HTML, so nothing is lost if this conversion is imperfect.
+function plainToHtml(text) {
+  if (!text) return "";
+  var esc = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  var paras = esc.split(/\n{2,}/).map(function(p) {
+    p = p.trim();
+    return p ? "<p style=\"margin:0 0 12px 0\">" + p.replace(/\n/g, "<br>") + "</p>" : "";
+  }).filter(Boolean).join("\n");
+  return (
+    "<div style=\"font-family:Arial,Helvetica,sans-serif;font-size:15px;" +
+    "line-height:1.65;color:#222222;max-width:600px\">" +
+    paras +
+    "</div>"
+  );
+}
+
 function sendEmail(params) {
   var opts = { from: CONFIG.FROM_EMAIL, name: CONFIG.FROM_NAME };
 
@@ -297,6 +319,10 @@ function sendEmail(params) {
   }
   if (bccSet.length) opts.bcc = bccSet.join(",");
   if (params.cc) opts.cc = params.cc;
+
+  // HTML body gives Outlook / Apple Mail proper formatting; GmailApp always
+  // sends a plain-text part alongside it so plain-text clients still work.
+  opts.htmlBody = plainToHtml(params.body);
 
   GmailApp.sendEmail(params.to, params.subject, params.body, opts);
 }
@@ -330,9 +356,25 @@ function sendReplyToMessage(sourceMsg, body, params) {
   try { originalDate = Utilities.formatDate(sourceMsg.getDate(), CONFIG.CALENDAR_TZ, "EEE, d MMM yyyy 'at' HH:mm"); } catch(e) {}
   var originalFrom = sourceMsg.getFrom() || "";
   var originalBody = (sourceMsg.getPlainBody() || "").substring(0, 2000);
+
+  // Plain-text quote (fallback)
   var quotedBlock =
     "\n\n---\nOn " + originalDate + ", " + originalFrom + " wrote:\n" +
     originalBody.split("\n").map(function(l) { return "> " + l; }).join("\n");
+
+  // HTML quote — styled left-border block matching standard email clients
+  var escapedFrom = originalFrom.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  var escapedOrigBody = originalBody
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>");
+  var quotedBlockHtml =
+    "<div style=\"margin-top:20px;padding-left:12px;border-left:3px solid #cccccc;" +
+    "color:#666666;font-size:14px;font-family:Arial,Helvetica,sans-serif\">" +
+    "<p style=\"margin:0 0 6px 0\"><strong>On " + originalDate + ", " + escapedFrom + " wrote:</strong></p>" +
+    "<p style=\"margin:0;line-height:1.5\">" + escapedOrigBody + "</p>" +
+    "</div>";
+
+  opts.htmlBody = plainToHtml(body) + quotedBlockHtml;
 
   sourceMsg.reply(body + quotedBlock, opts);
 }
