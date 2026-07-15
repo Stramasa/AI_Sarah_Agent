@@ -206,6 +206,27 @@ function checkLeads() {
         sessionLog.push("Known lead reply handled: " + subject);
 
       } else if (classification.type === "lead") {
+        // ---- Credibility check (06_Claude_Classification.js) --------------
+        // Before a new lead enters either the partner-resale route or normal
+        // outreach, critically read it for scam signals (mismatched domain,
+        // big-budget partnership language, etc). If not credible, escalate
+        // to managers and stop — do not contact the lead or offer it for resale.
+        var credibility = { credible: true };
+        try {
+          credibility = checkLeadCredibility(subject, activeBody, from, classifyEmail, classification);
+        } catch (credErr) {
+          Logger.log("checkLeadCredibility error: " + credErr);
+        }
+        if (!credibility.credible) {
+          handleUnsureEmail(thread, subject, activeBody, from,
+            "Lead credibility concern: " + (credibility.reason || "flagged by credibility check"));
+          sessionLog.push("Lead flagged for credibility concern: " + subject);
+          logAction(from, subject, "lead", "credibility_flagged", "",
+            "Lead flagged for manager review before outreach.", classifyEmail, credibility.reason || "");
+          thread.addLabel(processedLabel);
+          return;
+        }
+
         // ---- Partner resale check (12_Partner_Reselling.js) ----------------
         // Before Sarah reaches out to a brand-new lead, check whether it
         // qualifies to be resold to a partner (Mach Media, Whyfive, etc).

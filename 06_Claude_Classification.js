@@ -22,6 +22,8 @@ function classifyEmail(subject, body, from, instructions) {
     "Unsolicited offers to improve OUR SEO, sell US backlinks, redesign OUR website, sell US leads or databases, do animation/design/dev work FOR US, or send a price estimate for their services TO US are spam unless they are clearly part of an existing conversation. Note the direction: these are people trying to sell to Stramasa, not clients hiring Stramasa.\n" +
     "Calendly confirmations and bounce emails are handled before this classifier, so do not call those leads.\n\n" +
 
+    "SCAM DETECTION RULE — critically read every email before classifying. If a well-known brand contacts Stramasa unsolicited from an email domain that does NOT match the brand's real official domain (e.g., @kurtgeiger-inc.com instead of @kurtgeiger.com), or if the message cites large media budgets (£100k+/month) with vague long-term partnership framing but no specific project details, classify as spam. Big numbers alone are not fake — the scam signal is the mismatched domain combined with unsolicited big-budget partnership language.\n\n" +
+
     (instructions ? "ADDITIONAL CLASSIFICATION GUIDANCE (from instructions):\n" + instructions.substring(0, 1200) + "\n\n" : "") +
 
     "Return ONLY raw JSON with this exact structure:\n" +
@@ -191,4 +193,42 @@ function cleanJson(text) {
     .replace(/```json/g, "")
     .replace(/```/g, "")
     .trim();
+}
+
+// ---- Lead credibility check ------------------------------------------
+// Runs AFTER classification confirms "lead" but BEFORE the lead enters
+// either the partner-resale route or the normal handleNewLead route.
+// Catches scam patterns the classifier might miss (e.g., a well-known
+// brand writing from a mismatched email domain with big-budget partnership
+// language). Returns { credible: true } or { credible: false, reason: "..." }.
+function checkLeadCredibility(subject, body, from, leadEmail, classification) {
+  var prompt =
+    "You are reviewing an inbound email that was classified as a 'lead' for Stramasa, a B2B marketing agency.\n" +
+    "Your job is to critically assess whether this email is a genuine, credible lead or a potential scam / phishing attempt.\n\n" +
+    "Scam signals to check:\n" +
+    "1. Domain mismatch: a well-known brand contacts Stramasa from an email domain that does NOT match the brand's real official domain (e.g., @kurtgeiger-inc.com instead of @kurtgeiger.com). Look up the brand name in the email and check if the email domain looks legitimate.\n" +
+    "2. Unsolicited big-budget partnership language: the email cites large media budgets (£100k+/month or equivalent) with vague long-term partnership framing but no specific project, scope, or deliverable details.\n" +
+    "3. The combination of a well-known brand name + mismatched domain + big-budget language is a strong scam signal.\n\n" +
+    "IMPORTANT: Big numbers alone are NOT a scam signal. Many legitimate companies have large budgets. The scam signal is the domain mismatch combined with unsolicited big-budget partnership language.\n\n" +
+    "Also flag anything else that seems off: generic greetings, copy-paste feel, pressure tactics, requests for payment or bank details, etc.\n\n" +
+    "Return ONLY raw JSON with this exact structure:\n" +
+    "{\"credible\":true} if the lead seems genuine, or\n" +
+    "{\"credible\":false,\"reason\":\"short explanation of the concern\"} if it should be flagged for manager review.\n\n" +
+    "From: " + from + "\n" +
+    "Lead email: " + (leadEmail || "") + "\n" +
+    "Subject: " + subject + "\n" +
+    "Classifier said company: " + (classification.company || "") + "\n" +
+    "Body:\n" + (body || "").substring(0, 1800);
+
+  try {
+    var response = callClaude(prompt, "claude-haiku-4-5-20251001");
+    var result = JSON.parse(cleanJson(response));
+    if (result.credible === false) {
+      return { credible: false, reason: result.reason || "Flagged by credibility check" };
+    }
+    return { credible: true };
+  } catch(e) {
+    Logger.log("checkLeadCredibility error: " + e);
+    return { credible: true }; // fail open — don't block leads if the check itself fails
+  }
 }
