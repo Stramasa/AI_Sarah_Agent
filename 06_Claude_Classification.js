@@ -18,7 +18,10 @@ function classifyEmail(subject, body, from, instructions) {
     "A lead asking for case studies, references, portfolio examples, pricing, company profile, proposal, RFP response, capabilities, or previous work examples is still a lead unless it clearly refers to an existing project.\n" +
     "Website contact form submissions forwarded from requests@stramasa.com or groupleads@stramasa.com are leads unless the message is clearly spam, a vendor pitch, or an existing client project message.\n" +
     "IntroLynk contact form questions about buying leads, credits, pricing, subscriptions, registration, or how the platform works are leads unless the content itself is spam.\n" +
-    "Recruitshore talent applications are talent, but Recruitshore hire/profile requests are leads.\n" +
+    "Recruitshore rule — this is critical for correct classification:\n" +
+    "  - HIRE requests (someone looking to HIRE a freelancer/expert/profile) are LEADS, even if the requested profile is far outside Stramasa's normal marketing/strategy services. Recruitshore is a hiring platform; Stramasa turns these hire conversations into consulting engagements. So 'we are looking for an engineer', 'we need a designer', 'we want to hire a developer' = LEAD, not talent.\n" +
+    "  - TALENT applications (someone OFFERING or APPLYING with their own skills/services, looking for a job) are talent. 'I am a designer looking for work', 'I'd like to apply', 'here is my portfolio', 'I offer my services' = talent.\n" +
+    "  - The test: is the sender TRYING TO HIRE someone (lead), or OFFERING THEMSELVES as a candidate (talent)?\n" +
     "Unsolicited offers to improve OUR SEO, sell US backlinks, redesign OUR website, sell US leads or databases, do animation/design/dev work FOR US, or send a price estimate for their services TO US are spam unless they are clearly part of an existing conversation. Note the direction: these are people trying to sell to Stramasa, not clients hiring Stramasa.\n" +
     "Calendly confirmations and bounce emails are handled before this classifier, so do not call those leads.\n\n" +
 
@@ -222,7 +225,12 @@ function checkLeadCredibility(subject, body, from, leadEmail, classification) {
 
   try {
     var response = callClaude(prompt, "claude-haiku-4-5-20251001");
-    var result = JSON.parse(cleanJson(response));
+    var cleaned = cleanJson(response);
+    // Claude sometimes appends text after the JSON object. Extract just the
+    // first {...} block before parsing.
+    var match = cleaned.match(/\{[\s\S]*?\}/);
+    if (!match) return { credible: true };
+    var result = JSON.parse(match[0]);
     if (result.credible === false) {
       return { credible: false, reason: result.reason || "Flagged by credibility check" };
     }

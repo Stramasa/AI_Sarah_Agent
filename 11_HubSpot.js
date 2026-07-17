@@ -28,30 +28,10 @@ var HUBSPOT_BRAND_INITIALS = {
   "Recruitshore":          "R"
 };
 
-// Returns the HubSpot owner ID for sang@stramasa.com.
-// Looks up by email via the owners API and caches the result in Script Properties.
+// Returns the HubSpot owner ID for the default deal assignee (Sang).
+// Owner IDs are hardcoded in CONFIG because the owners API lookup was unreliable.
 function _getHubspotOwnerId_() {
-  var cached = PropertiesService.getScriptProperties().getProperty("HUBSPOT_OWNER_ID");
-  if (cached) return cached;
-
-  try {
-    var resp = UrlFetchApp.fetch("https://api.hubapi.com/crm/v3/owners?limit=100", {
-      headers: { Authorization: "Bearer " + CONFIG.HUBSPOT_TOKEN },
-      muteHttpExceptions: true
-    });
-    var json = JSON.parse(resp.getContentText());
-    var owners = json.results || [];
-    for (var i = 0; i < owners.length; i++) {
-      if (owners[i].email && owners[i].email.toLowerCase() === "sang@stramasa.com") {
-        PropertiesService.getScriptProperties().setProperty("HUBSPOT_OWNER_ID", owners[i].id);
-        return owners[i].id;
-      }
-    }
-    Logger.log("HubSpot: could not find owner ID for sang@stramasa.com");
-  } catch (e) {
-    Logger.log("HubSpot owner lookup error: " + e);
-  }
-  return null;
+  return CONFIG.HUBSPOT_OWNER_DEFAULT || CONFIG.HUBSPOT_OWNER_SANG || null;
 }
 
 // Searches for a contact by email. Returns the contact ID or null.
