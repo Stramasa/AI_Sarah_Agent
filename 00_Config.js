@@ -21,11 +21,11 @@ var CONFIG = {
   HUBSPOT_TOKEN:               PropertiesService.getScriptProperties().getProperty("HUBSPOT_TOKEN"),
   HUBSPOT_PIPELINE_ID:         "default",
   // ---- HubSpot owner IDs (hardcoded — API lookup was unreliable) ----
-  HUBSPOT_OWNER_SANG:     "74791036",   // default deal assignee
-  HUBSPOT_OWNER_PEPIJN:    "46342151",   // also Walter
-  HUBSPOT_OWNER_EIMEE:     "46342180",
+  HUBSPOT_OWNER_SANG:     "723629115",   // default deal assignee
+  HUBSPOT_OWNER_PEPIJN:    "424151772",   // also Walter
+  HUBSPOT_OWNER_EIMEE:     "424161516",
   HUBSPOT_OWNER_ADMIN:     "26109387",   // stramasa admin user
-  HUBSPOT_OWNER_DEFAULT:   "74791036",   // fallback when no specific owner
+  HUBSPOT_OWNER_DEFAULT:   "723629115",   // fallback when no specific owner
   // ---- HubSpot pipeline stages (in order) ----
   // Stage 1 — new inbound lead
   HUBSPOT_STAGE_NEW_LEAD:           "138242010",
