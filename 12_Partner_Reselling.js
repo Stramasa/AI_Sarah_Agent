@@ -265,7 +265,11 @@ function maybeStartPartnerResale(thread, msg, classification, brand, forwardedBy
     "Do you think this lead is qualified to sell to " + assessment.partnerName + "?\n" +
     "Reply YES to sell it (I'll stand down and you two take it from here with the partner), " +
     "or NO to keep it in-house (I'll go ahead and reach out to the lead myself with the usual scheduling email).\n\n" +
-    "Sarah\n\n[ref:" + tag + "]";
+    "Sarah\n\n[ref:" + tag + "]\n\n" +
+    "---------- ORIGINAL LEAD EMAIL BELOW ----------\n" +
+    "From: " + from + "\n" +
+    "Subject: " + subject + "\n\n" +
+    body;
 
   sendEmail({
     to: CONFIG.ESCALATION_TO,
