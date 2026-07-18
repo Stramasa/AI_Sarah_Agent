@@ -24,7 +24,7 @@ var CONFIG = {
   HUBSPOT_OWNER_SANG:     "723629115",   // default deal assignee
   HUBSPOT_OWNER_PEPIJN:    "424151772",   // also Walter
   HUBSPOT_OWNER_EIMEE:     "424161516",
-  HUBSPOT_OWNER_ADMIN:     "26109387",   // stramasa admin user
+  HUBSPOT_OWNER_ADMIN:     "761387979",   // Walter T. (axpirapro@gmail.com)
   HUBSPOT_OWNER_DEFAULT:   "723629115",   // fallback when no specific owner
   // ---- HubSpot pipeline stages (in order) ----
   // Stage 1 — new inbound lead
