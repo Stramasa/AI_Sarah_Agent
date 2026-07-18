@@ -305,8 +305,19 @@ function plainToHtml(text) {
   );
 }
 
+// Strips emoji and other non-text pictograph characters from a subject line
+// so outbound emails don't carry through weird symbols from inbound subjects
+// (e.g., IntroLynk new-company-registration emails with emoji prefixes).
+function stripEmoji(text) {
+  return (text || "")
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}\u{200D}\u{2190}-\u{21FF}\u{2300}-\u{23FF}\u{25A0}-\u{25FF}\u{2B00}-\u{2BFF}]/gu, "")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+}
+
 function sendEmail(params) {
   var opts = { from: CONFIG.FROM_EMAIL, name: CONFIG.FROM_NAME };
+  params.subject = stripEmoji(params.subject);
 
   // Merge caller-supplied BCC with ALWAYS_BCC so team visibility is guaranteed
   // on every outbound email without the caller needing to remember to add it.
@@ -338,6 +349,14 @@ function sendEmail(params) {
 function sendReplyToMessage(sourceMsg, body, params) {
   params = params || {};
   var opts = { from: CONFIG.FROM_EMAIL, name: CONFIG.FROM_NAME };
+
+  // Strip emoji from the reply subject so outbound emails don't carry
+  // through weird symbols from inbound subjects (e.g., IntroLynk emails).
+  // sourceMsg.reply() would otherwise auto-use "Re: " + original subject.
+  try {
+    var cleanSubject = stripEmoji(sourceMsg.getSubject() || "");
+    if (cleanSubject) opts.subject = "Re: " + cleanSubject;
+  } catch(e) {}
 
   // Same ALWAYS_BCC merging as sendEmail — every outbound reply includes team BCC.
   var bccSet = (CONFIG.ALWAYS_BCC || []).slice();
