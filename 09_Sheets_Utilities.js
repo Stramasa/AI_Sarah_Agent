@@ -94,7 +94,7 @@ function _leadRowLookup(keyField, keyValue) {
     if (rows.length < 2) return null;
     var map = headerMap(rows[0]);
     var needle = String(keyValue).toLowerCase();
-    for (var i = 1; i < rows.length; i++) {
+    for (var i = rows.length - 1; i >= 1; i--) {
       if (String(val(rows[i], map, keyField) || "").toLowerCase() !== needle) continue;
       return {
         sheet:         sheet,
@@ -109,7 +109,9 @@ function _leadRowLookup(keyField, keyValue) {
         followUpCount: parseInt(val(rows[i], map, "FollowUpCount") || "0", 10) || 0,
         followUpSentAt: val(rows[i], map, "FollowUpSentAt") || "",
         replyCount:    parseInt(val(rows[i], map, "ReplyCount") || "0", 10) || 0,
-        dealId:        val(rows[i], map, "HubSpotDealId") || ""
+        dealId:        val(rows[i], map, "HubSpotDealId") || "",
+      tzRegion:      val(rows[i], map, "TzRegion") || "",
+      offeredSlots:  val(rows[i], map, "OfferedSlots") || ""
       };
     }
   } catch(e) {

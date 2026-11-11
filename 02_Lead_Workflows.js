@@ -65,7 +65,9 @@ function handleNewLead(thread, msg, classification, brand, memory, forwardedByEm
     "Notes": "Initial Sarah reply sent. TZ: " + tzRegion,
     "ThreadId": threadId,
     "FollowUpCount": "0",
-    "FollowUpSentAt": isoNow()
+    "FollowUpSentAt": isoNow(),
+    "TzRegion":      tzRegion,
+    "OfferedSlots":  slotsDetailed.map(function(s) { return s.label; }).join("\n")
   });
 
   // HubSpot: create the deal, then write the id back onto the row just added.
@@ -119,9 +121,17 @@ function handleLeadReply(thread, memory) {
   var name         = leadRow ? leadRow.name : "";
   var replyCount   = leadRow ? leadRow.replyCount : 0;
 
-  var tzRegion = detectTimezoneRegion(body + " " + from + " " + replyToEmail);
+  var storedTz = (leadRow && leadRow.tzRegion) ? leadRow.tzRegion : "";
+  var tzRegion = storedTz || detectTimezoneRegion(body + " " + from + " " + replyToEmail);
   var offeredTime = extractOfferedTime(body);
   var slotsDetailed = getAvailableSlotsDetailed(tzRegion);
+  var storedSlots = (leadRow && leadRow.offeredSlots) ? leadRow.offeredSlots : "";
+  var priorOfferedSlots = [];
+  if (storedSlots) {
+    priorOfferedSlots = storedSlots.split(/\n/).filter(function(l) { return l.trim(); }).map(function(label) {
+      return { label: label.trim() };
+    });
+  }
   var threadContext = buildThreadContext(messages);
 
   var drafted;
@@ -136,6 +146,7 @@ function handleLeadReply(thread, memory) {
       slotsDetailed: slotsDetailed,
       tzRegion: tzRegion,
       offeredTime: offeredTime,
+      priorOfferedSlots: priorOfferedSlots,
       memory: memory
     });
   } catch(draftErr) {
@@ -160,6 +171,16 @@ function handleLeadReply(thread, memory) {
   replyCount = replyCount + 1;
   if (leadRow) {
     setByHeader(leadRow.sheet, leadRow.rowIndex, leadRow.map, "ReplyCount", String(replyCount));
+    if (threadId && leadRow.threadId !== threadId) {
+      setByHeader(leadRow.sheet, leadRow.rowIndex, leadRow.map, "ThreadId", threadId);
+    }
+    if (tzRegion && !leadRow.tzRegion) {
+      setByHeader(leadRow.sheet, leadRow.rowIndex, leadRow.map, "TzRegion", tzRegion);
+    }
+    if (slotsDetailed.length > 0) {
+      setByHeader(leadRow.sheet, leadRow.rowIndex, leadRow.map, "OfferedSlots",
+        slotsDetailed.map(function(s) { return s.label; }).join("\n"));
+    }
   }
 
   // After LEAD_ESCALATE_AFTER_ROUNDS back-and-forths with no booking,
@@ -285,12 +306,24 @@ function draftLeadReply(opts) {
     } else {
       // No specific time — but check for booking intent words like "I agree",
       // "send me the invite", "let's do it", "confirmed", "that works for me".
+      // Inject the previously-offered slots so Claude can match a vague "yes"
+      // to the actual slot instead of trying to match against a fresh list.
+      var priorSlotBlock = "";
+      if (opts.priorOfferedSlots && opts.priorOfferedSlots.length > 0) {
+        var priorLabels = opts.priorOfferedSlots.map(function(s) { return s.label; });
+        priorSlotBlock =
+          "Slots previously offered to this lead (use one of these EXACT labels if booking):\n" +
+          priorLabels.join("\n") + "\n\n";
+      }
+
       bookingInstruction =
+        priorSlotBlock +
         "Lead has not specified an exact time. HOWEVER: if the lead clearly agrees to one of the slots " +
         "previously offered in this conversation (e.g. says 'I agree', 'that works', 'send the invite', " +
-        "'confirmed', 'let's do it', 'sounds good') — pick the slot they were most recently offered and " +
-        "call book_meeting for it. If you book, the reply_to_lead body must confirm the booked time and " +
-        "NOT list slots again. If the intent is genuinely ambiguous, just offer the slots again.\n";
+        "'confirmed', 'let's do it', 'sounds good') — pick the slot they were most recently offered from " +
+        "the previously offered list above and call book_meeting with its EXACT label. If you book, the " +
+        "reply_to_lead body must confirm the booked time and NOT list slots again. If the intent is " +
+        "genuinely ambiguous, just offer the current available slots again.\n";
     }
 
     userPrompt =
@@ -324,6 +357,15 @@ function draftLeadReply(opts) {
     if (bookCall && bookCall.input && bookCall.input.chosen_slot) {
       var matchedSlot = findSlotByLabel(opts.slotsDetailed, bookCall.input.chosen_slot);
 
+      // If the slot isn't in the fresh list, check the previously-offered slots
+      // stored in the sheet — the lead may be confirming a slot from an earlier email.
+      if (!matchedSlot && opts.priorOfferedSlots && opts.priorOfferedSlots.length > 0) {
+        matchedSlot = findSlotByLabel(opts.priorOfferedSlots, bookCall.input.chosen_slot);
+        if (matchedSlot) {
+          Logger.log("BOOKING: matched prior offered slot for " + opts.leadEmail + ": " + matchedSlot.label);
+        }
+      }
+
       if (!matchedSlot) {
         Logger.log("BOOKING SKIPPED: chosen_slot '" + bookCall.input.chosen_slot + "' did not match any offered slot for " + opts.leadEmail);
       } else {
@@ -351,8 +393,8 @@ function generateFollowUp(data, num) {
     "brief final note, leave the door open"
   ];
 
-  // Get fresh available slots for this lead's timezone.
-  var tzRegion = detectTimezoneRegion((data.leadEmail || "") + " " + (data.subject || ""));
+  // Use the stored timezone from first contact if available; fall back to detection.
+  var tzRegion = data.tzRegion || detectTimezoneRegion((data.leadEmail || "") + " " + (data.subject || ""));
   var slotsDetailed = [];
   try { slotsDetailed = getAvailableSlotsDetailed(tzRegion); } catch(e) {}
   var slotLabels = slotsDetailed.map(function(s) { return s.label; });
@@ -451,7 +493,7 @@ function updateLeadStatus(email, status, note) {
     var sheet = getSheet("Leads");
     var data = sheet.getDataRange().getValues();
     var map = headerMap(data[0]);
-    for (var i = 1; i < data.length; i++) {
+    for (var i = data.length - 1; i >= 1; i--) {
       if ((val(data[i], map, "Email") || "").toLowerCase() === email.toLowerCase()) {
         setByHeader(sheet, i + 1, map, "Status", status);
         setByHeader(sheet, i + 1, map, "LastContact", isoNow());

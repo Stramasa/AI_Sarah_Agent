@@ -155,6 +155,13 @@ function checkLeads() {
     var classification = safeClassify(subject, activeBody, classifyFrom, instructions);
     Logger.log("CLASSIFIED: " + JSON.stringify(classification));
 
+    // If the email-based fallback will override routing to handleLeadReply,
+    // log the effective type as "lead" so the audit trail matches reality.
+    var effectiveType = classification.type;
+    if (!hasLeadRecord && !isKnownForwarder(classifyEmail) && !isInternalEmail(classifyEmail)) {
+      if (findLeadSheetRowByEmail(classifyEmail)) effectiveType = "lead";
+    }
+
     // If a team member forwarded this email, trust that it needs a response —
     // never silently discard it as spam or talent.
     if (isForwardedByTeam) {
@@ -197,7 +204,7 @@ function checkLeads() {
       }
     }
 
-    logAction(from, subject, classification.type, "pending", "", "", classifyEmail, classification.reason || "");
+    logAction(from, subject, effectiveType, "pending", "", "", classifyEmail, classification.reason || "");
 
     try {
       if (messages.length > 1 && hasLeadRecord) {
@@ -254,10 +261,19 @@ function checkLeads() {
         }
 
       } else if (classification.type === "client") {
-        // Client emails always go to handleClientEmail for internal tracking.
-        // Sarah never sends external scheduling emails to existing clients.
-        handleClientEmail(thread, activeMsg, buildSarahContext("client", activeBody, instructions, knowledge));
-        sessionLog.push("Client/PM email processed: " + subject);
+        // Team-forwarded emails classified as "client" but with scheduling intent
+        // (e.g. someone forwards an external contact asking to set up a call) get
+        // a direct reply with calendar slots. All other client emails go to
+        // internal tracking only — Sarah never sends external emails to clients.
+        if (isForwardedByTeam && looksLikeSchedulingRequest(activeBody)) {
+          handleSchedulingForward(thread, activeMsg, classification, brand, classifyEmail,
+            buildSarahContext("lead", activeBody, instructions, knowledge),
+            forwardedByEmail);
+          sessionLog.push("Team-forwarded scheduling email replied to: " + subject);
+        } else {
+          handleClientEmail(thread, activeMsg, buildSarahContext("client", activeBody, instructions, knowledge));
+          sessionLog.push("Client/PM email processed: " + subject);
+        }
 
       } else {
         handleUnsureEmail(thread, subject, activeBody, from, "Classification unsure");
@@ -418,6 +434,9 @@ function debugCheckLeads() {
     Logger.log("  Classification: " + finalType + " | reason: " + (classification.reason || ""));
 
     var hasLeadRecord = findLeadSheetRowByThreadId(thread.getId()) !== null;
+    if (!hasLeadRecord && !isKnownForwarder(classifyEmail) && !isInternalForwarder(classifyEmail)) {
+      if (findLeadSheetRowByEmail(classifyEmail)) hasLeadRecord = true;
+    }
 
     if (finalType === "spam")   Logger.log("  ACTION: label as spam, skip");
     else if (finalType === "talent") Logger.log("  ACTION: label as talent, skip");
@@ -447,7 +466,6 @@ function processFollowUps() {
     // Only rows still waiting for a reply.
     var status = (val(rows[i], map, "Status") || "").toLowerCase();
     if (status !== "contacted") continue;
-
     var followUpCount = parseInt(val(rows[i], map, "FollowUpCount") || "0", 10) || 0;
     if (followUpCount >= 3) continue;
 
@@ -467,17 +485,18 @@ function processFollowUps() {
     var service  = val(rows[i], map, "Service") || "";
     var brand    = val(rows[i], map, "Brand") || DEFAULT_BRAND;
     var dealId   = val(rows[i], map, "HubSpotDealId") || "";
+    var storedTz = val(rows[i], map, "TzRegion") || "";
     var num      = followUpCount + 1;
 
     var body = generateFollowUp(
-      { leadEmail: leadEmail, leadName: leadName, subject: subject, service: service, brand: brand, followUpCount: followUpCount },
+      { leadEmail: leadEmail, leadName: leadName, subject: subject, service: service, brand: brand, followUpCount: followUpCount, tzRegion: storedTz },
       num
     );
 
     // Quote Sarah's last sent email so the lead sees the full history below the follow-up.
     var quotedContext = "";
     try {
-      var sentSearch = GmailApp.search('in:sent to:' + leadEmail, 0, 1);
+      var sentSearch = GmailApp.search('in:sent to:' + leadEmail + ' subject:"' + (subject || "").replace(/"/g, '') + '"', 0, 1);
       if (sentSearch.length > 0) {
         var sentMsgs = sentSearch[0].getMessages();
         if (sentMsgs.length > 0) {
@@ -517,6 +536,46 @@ function processFollowUps() {
     if (num >= 3) {
       setByHeader(sheet, i + 1, map, "Status", "no-reply-3-followups");
       setByHeader(sheet, i + 1, map, "Notes",  "Closed after 3 follow-ups with no reply.");
+    }
+  }
+
+  // Check leads that replied once but then went silent — notify Pepijn so
+  // the conversation doesn't fall through the cracks. Only fires once per lead.
+  var notifiedProp = PropertiesService.getScriptProperties();
+  for (var j = 1; j < rows.length; j++) {
+    var rStatus = (val(rows[j], map, "Status") || "").toLowerCase();
+    if (rStatus !== "replied") continue;
+
+    var rLastContact = val(rows[j], map, "LastContact") || "";
+    if (!rLastContact) continue;
+    var rLastMs = new Date(rLastContact).getTime();
+    if (isNaN(rLastMs)) continue;
+
+    var rHoursSince = (now - rLastMs) / 3600000;
+    if (rHoursSince < 72) continue; // only after 3 days of silence
+
+    var rEmail = val(rows[j], map, "Email") || "";
+    if (!rEmail) continue;
+    var rName = val(rows[j], map, "Name") || "";
+    var rSubject = val(rows[j], map, "SourceSubject") || "";
+
+    var notifKey = "cold_reply_notified_" + rEmail.toLowerCase();
+    if (notifiedProp.getProperty(notifKey)) continue; // only notify once
+
+    try {
+      sendEmail({
+        to: CONFIG.ESCALATION_TO,
+        cc: CONFIG.ESCALATION_CC,
+        subject: "Lead replied then went silent: " + rName,
+        body: "Hi,\n\nThis lead replied once " + Math.round(rHoursSince / 24) + " days ago but hasn't responded since. " +
+              "You may want to follow up personally.\n\n" +
+              "Lead: " + rName + " <" + rEmail + ">\nSubject: " + rSubject + "\n\nSarah"
+      });
+      notifiedProp.setProperty(notifKey, String(now));
+      logAction(rEmail, rSubject, "lead", "cold_reply_notified", rName, rEmail,
+        "Lead replied then went silent for " + Math.round(rHoursSince / 24) + " days. Notified manager.");
+    } catch(notifErr) {
+      Logger.log("Cold reply notification error: " + notifErr);
     }
   }
 

@@ -202,12 +202,15 @@ function handleCalendlyConfirmation(thread, subject, body, from) {
     }
 
     // Send a warm confirmation reply in the original lead thread (if we have the threadId).
-    var leadName = (leadRow && leadRow.name) ? leadRow.name : "there";
+    var leadName = (leadRow && leadRow.name) ? leadRow.name : (info.name || "there");
     var brand    = (leadRow && leadRow.brand) ? leadRow.brand : DEFAULT_BRAND;
     var when     = info.when ? " on " + info.when : "";
+    var tzLine   = info.inviteeTz ? " (" + info.inviteeTz + ")" : "";
     var confirmMsg =
       "Hi " + leadName + ",\n\n" +
-      "Your booking is confirmed" + when + " — looking forward to speaking with you!\n\n" +
+      "Your booking is confirmed" + when + tzLine + " — looking forward to speaking with you!\n" +
+      "You'll receive a Google Meet link with your calendar invitation. " +
+      "If you need to reschedule, you can do so here: " + CONFIG.CALENDLY + "\n\n" +
       "Sarah | " + brand;
 
     var threadId = leadRow ? leadRow.threadId : null;
@@ -423,7 +426,24 @@ function extractCalendlyInfo(subject, body) {
   var when = "";
   var whenMatch = text.match(/(Mon|Tue|Wed|Thu|Fri|Sat|Sun|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[^\n]{0,80}(\d{1,2}:\d{2}|\d{1,2}\s?(am|pm))/i);
   if (whenMatch) when = whenMatch[0];
-  return { email: email, name: "", when: when };
+
+  // Parse the invitee name from the Calendly subject line:
+  // "New Event: Praepilai Songprasertkul - 14:00 Tue, 17 Nov 2026"
+  // or from the body "Invitee:\nPraepilai Songprasertkul"
+  var name = "";
+  var subjMatch = (subject || "").match(/New Event:\s*(.+?)\s*-\s*\d{1,2}:\d{2}/i);
+  if (subjMatch) name = subjMatch[1].trim();
+  if (!name) {
+    var bodyMatch = (body || "").match(/Invitee:\s*\n([^\n]+)/i);
+    if (bodyMatch) name = bodyMatch[1].trim();
+  }
+
+  // Extract the invitee timezone from the body if present.
+  var inviteeTz = "";
+  var tzMatch = (body || "").match(/Invitee Time Zone:\s*\n([^\n]+)/i);
+  if (tzMatch) inviteeTz = tzMatch[1].trim();
+
+  return { email: email, name: name, when: when, inviteeTz: inviteeTz };
 }
 
 // Lightweight keyword check — no Claude call needed — to detect whether
