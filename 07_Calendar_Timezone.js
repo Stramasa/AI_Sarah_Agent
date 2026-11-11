@@ -33,8 +33,8 @@ function computeAvailableSlotsDetailed(tzRegion) {
 
 if (tzRegion === "US") {
   passes = [
-    { name: "US preferred morning", startHour: 8, startMinute: 30, endHour: 11 },
-    { name: "US wider morning", startHour: 8, startMinute: 0, endHour: 12 },
+    { name: "US preferred morning", startHour: 8, startMinute: 30, endHour: 12 },
+    { name: "US wider morning", startHour: 8, startMinute: 0, endHour: 13 },
     { name: "US evening backup", startHour: 20, startMinute: 0, endHour: 22 }
   ];
 } else {
@@ -143,11 +143,13 @@ if (tzRegion === "US") {
 // the lead's window already defines acceptable client-side hours.
 function findSlotForWindow(windowText, tzRegion) {
   var parsed = parseAvailabilityWindow(windowText);
-  if (!parsed || !parsed.dayName || parsed.startHour === undefined) return null;
+  if (!parsed || parsed.startHour === undefined) return null;
 
   var endHour = (parsed.endHour && parsed.endHour > parsed.startHour)
     ? parsed.endHour
     : parsed.startHour + 2;
+
+  var startMinute = parsed.startMinute || 0;
 
   var cal = CalendarApp.getCalendarById(CONFIG.CALENDAR_ID);
   if (!cal) return null;
@@ -164,8 +166,10 @@ function findSlotForWindow(windowText, tzRegion) {
 
   // Utilities "u" returns 1=Mon … 7=Sun. Map to DAY_NAMES index (0=Sun,1=Mon..6=Sat).
   var DAY_NAMES = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
-  var targetDow = DAY_NAMES.indexOf(parsed.dayName);
-  if (targetDow === -1) {
+  // dayName is optional — a lead may say "10:30 or 11 AM EST" without naming a day.
+  // When absent, search ALL weekdays instead of returning null.
+  var targetDow = parsed.dayName ? DAY_NAMES.indexOf(parsed.dayName) : -1;
+  if (parsed.dayName && targetDow === -1) {
     Logger.log("findSlotForWindow: unrecognised dayName: " + parsed.dayName);
     return null;
   }
@@ -179,10 +183,16 @@ function findSlotForWindow(windowText, tzRegion) {
     var externalHr = parseInt(Utilities.formatDate(cursor, target.zone, "HH"), 10);
     var externalMn = parseInt(Utilities.formatDate(cursor, target.zone, "mm"), 10);
 
-    if (slotDow !== targetDow) { cursor = new Date(cursor.getTime() + stepMs); continue; }
+    // If a specific day was given, only check that day.
+    // If no day was given, search all weekdays (skip Sat/Sun).
+    if (targetDow !== -1) {
+      if (slotDow !== targetDow) { cursor = new Date(cursor.getTime() + stepMs); continue; }
+    } else {
+      if (slotDow === 0 || slotDow === 6) { cursor = new Date(cursor.getTime() + stepMs); continue; }
+    }
 
     var inWindow = (externalHr > parsed.startHour ||
-                    (externalHr === parsed.startHour && externalMn >= 0)) &&
+                    (externalHr === parsed.startHour && externalMn >= startMinute)) &&
                    externalHr < endHour;
 
     if (!inWindow) { cursor = new Date(cursor.getTime() + stepMs); continue; }
@@ -215,8 +225,13 @@ function parseAvailabilityWindow(windowText) {
   var prompt =
     "Parse this availability text into JSON.\n" +
     "Input: \"" + windowText + "\"\n" +
-    "Return ONLY raw JSON with no markdown: {\"dayName\": \"Tuesday\", \"startHour\": 10, \"endHour\": 15}\n" +
-    "dayName: full English day name. startHour and endHour in 24h integers. No other fields.";
+    "Return ONLY raw JSON with no markdown: {\"dayName\": \"Tuesday\", \"startHour\": 10, \"startMinute\": 30, \"endHour\": 15}\n" +
+    "dayName: full English day name, or empty string if no specific day is mentioned.\n" +
+    "startHour and endHour in 24h integers. startMinute in integers (0 or 30), default 0 if not stated.\n" +
+    "IMPORTANT: If the text lists discrete times rather than a range (e.g. '10:30 or 11 AM'), " +
+    "set startHour/startMinute to the EARLIEST mentioned time and endHour to ONE HOUR AFTER the latest mentioned time " +
+    "so that all mentioned times fall within the window. For '10:30 or 11 AM' → startHour:10, startMinute:30, endHour:12.\n" +
+    "No other fields.";
   try {
     var raw = callClaude(prompt, "claude-haiku-4-5-20251001").trim()
                 .replace(/^```[\w]*\n?/, "").replace(/\n?```$/, "").trim();
