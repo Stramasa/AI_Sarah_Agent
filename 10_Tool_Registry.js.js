@@ -76,7 +76,7 @@ var CLIENT_TOOLS = [
     description:
       "Send an internal email to a Stramasa team member because they need to actually do work in response to this client email. " +
       "Only call this if real action is needed - not for purely informational emails (thanks, acknowledged, received). " +
-      "Use Sang for operational execution, PM, scheduling, coordination, admin. Use Eimee for creative work. " +
+      "Use Pepijn for operational execution, PM, scheduling, coordination, admin, strategy, pricing, scope, complaints, legal, finance, or unclear ownership. Use Eimee for creative work. " +
       "Use Pepijn only for strategy, pricing, scope, complaints, legal, finance, or unclear ownership.",
     input_schema: {
       type: "object",

@@ -15,11 +15,11 @@
 //      checkLeads proceeds exactly as before (handleNewLead runs, Sarah
 //      emails the lead with slots/Calendly like normal).
 //   4. If the lead DOES qualify -> Sarah does NOT contact the lead.
-//      Instead she emails pepijn + sang internally with the tier, sell
+//      Instead she emails pepijn internally with the tier, sell
 //      value, and an anonymized briefing, and asks them to decide.
 //      The lead is parked in the "PartnerResale" sheet tab, status
 //      "pending_decision". No HubSpot deal, no lead-facing email yet.
-//   5. When pepijn or sang reply on that internal thread:
+//   5. When pepijn replies on that internal thread:
 //        - YES  -> mark "approved_manual". Nothing else happens from
 //                  Sarah's side; the team offers the lead to the partner
 //                  manually outside the script.
@@ -252,7 +252,7 @@ function maybeStartPartnerResale(thread, msg, classification, brand, forwardedBy
   var tag = "RS-" + new Date().getTime();
 
   var internalBody =
-    "Hi Pepijn, Hi Sang,\n\n" +
+    "Hi Pepijn,\n\n" +
     "I ran the lead qualification check on a new inbound lead. Here's the assessment:\n\n" +
     "Partner fit: " + assessment.partnerName + "\n" +
     "Tier: " + assessment.tier + (assessment.requestType ? " (" + assessment.requestType + ")" : "") + "\n" +

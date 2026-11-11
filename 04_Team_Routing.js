@@ -9,7 +9,7 @@ function maybeNotifyTeamOwner(clientName, clientData, action, subject, body, cli
   var ownerName = resolveProjectOwner(clientName, clientData, action);
 
   if (!ownerName) {
-    ownerName = "Sang Nguyen";
+    ownerName = "Pepijn van Vliet";
   }
 
   var owner = findTeamMemberByName(ownerName);

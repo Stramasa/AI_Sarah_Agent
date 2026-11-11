@@ -28,7 +28,7 @@ var HUBSPOT_BRAND_INITIALS = {
   "Recruitshore":          "R"
 };
 
-// Returns the HubSpot owner ID for the default deal assignee (Sang).
+// Returns the HubSpot owner ID for the default deal assignee (Pepijn).
 // Owner IDs are hardcoded in CONFIG because the owners API lookup was unreliable.
 function _getHubspotOwnerId_() {
   return CONFIG.HUBSPOT_OWNER_DEFAULT || CONFIG.HUBSPOT_OWNER_SANG || null;

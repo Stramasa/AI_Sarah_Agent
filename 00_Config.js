@@ -21,11 +21,11 @@ var CONFIG = {
   HUBSPOT_TOKEN:               PropertiesService.getScriptProperties().getProperty("HUBSPOT_TOKEN"),
   HUBSPOT_PIPELINE_ID:         "default",
   // ---- HubSpot owner IDs (hardcoded — API lookup was unreliable) ----
-  HUBSPOT_OWNER_SANG:     "723629115",   // default deal assignee
+  HUBSPOT_OWNER_SANG:     "723629115",   // former default (Sang — no longer at Stramasa)
   HUBSPOT_OWNER_PEPIJN:    "424151772",   // also Walter
   HUBSPOT_OWNER_EIMEE:     "424161516",
   HUBSPOT_OWNER_ADMIN:     "761387979",   // Walter T. (axpirapro@gmail.com)
-  HUBSPOT_OWNER_DEFAULT:   "723629115",   // fallback when no specific owner
+  HUBSPOT_OWNER_DEFAULT:   "424151772",   // fallback when no specific owner (Pepijn)
   // ---- HubSpot pipeline stages (in order) ----
   // Stage 1 — new inbound lead
   HUBSPOT_STAGE_NEW_LEAD:           "138242010",
@@ -48,10 +48,10 @@ var CONFIG = {
   // Stage 10+ — verbal decision, won, lost, postponed, churn — Sarah never touches these
   HUBSPOT_STAGE_VERBAL:             "decisionmakerboughtin",
   // Always BCC'd on every outbound Sarah email (team visibility).
-  ALWAYS_BCC:      ["sang@stramasa.com"],
+  ALWAYS_BCC:      ["pepijn@stramasa.com"],
   // Who receives escalations (difficult leads, unsure emails, bounces, errors).
   ESCALATION_TO:   "pepijn@stramasa.com",
-  ESCALATION_CC:   "sang@stramasa.com",
+  ESCALATION_CC:   "",
   // After this many lead reply rounds with no booking, notify the team.
   LEAD_ESCALATE_AFTER_ROUNDS: 3,
   CALENDLY:        "https://calendly.com/stramasa-agency/30min",
@@ -64,11 +64,11 @@ var CONFIG = {
   CALENDAR_ID:     "stramasapro@gmail.com",
   CALENDAR_TZ:     "Asia/Manila",
   CALENDAR_DAYS:   10,
-  TEAM_CC:         ["pepijn@stramasa.com", "sang@stramasa.com", "eimee@stramasa.com"],
+  TEAM_CC:         ["pepijn@stramasa.com", "eimee@stramasa.com"],
   FORWARDERS:      ["requests@stramasa.com", "groupleads@stramasa.com"],
   // Internal team emails — when they forward an external email to Sarah,
   // treat it the same as a forwarder: extract the real sender from the body.
-  INTERNAL_TEAM:   ["pepijn@stramasa.com", "sang@stramasa.com", "eimee@stramasa.com"],
+  INTERNAL_TEAM:   ["pepijn@stramasa.com", "eimee@stramasa.com"],
   FOLLOW_UP_1_HOURS: 48,
   FOLLOW_UP_2_HOURS: 96,
   FOLLOW_UP_3_HOURS: 144,

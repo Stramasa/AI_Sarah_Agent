@@ -63,6 +63,7 @@ function generateIntrolynkFollowUp(parsed, slotsDetailed) {
       "User: " + (parsed.userName || "there") + "\n" +
       "Company: " + (parsed.userCompany || "") + "\n" +
       "Package they started: " + (packageDesc || "credits package") + "\n\n" +
+      "Mention that we have great lead opportunities available matching providers looking to work with buyers like them. " +
       "Write a short helpful email. Address any hesitation, offer to answer questions, " +
       "gently encourage completing the purchase. Sound like a real person, not a sales bot.\n" +
       "Max 60 words before sign-off. No em dashes. No bullet points. Plain text only.\n" +
@@ -75,6 +76,7 @@ function generateIntrolynkFollowUp(parsed, slotsDetailed) {
       "A new user just registered on the platform.\n\n" +
       "User: " + (parsed.userName || "there") + "\n" +
       "Company: " + (parsed.userCompany || "") + "\n\n" +
+      "Mention that we have great lead opportunities available matching providers looking to work with buyers like them. " +
       "Write a brief warm check-in email. Ask if they found what they needed, offer to help " +
       "them get started on the platform. Sound genuine, not like an automated welcome email.\n" +
       "Max 55 words before sign-off. No em dashes. No bullet points. Plain text only.\n" +

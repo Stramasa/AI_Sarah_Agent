@@ -37,7 +37,7 @@ function checkLeads() {
 
     // ---- Partner-resale decision reply check (12_Partner_Reselling.js) ----
     // If this thread is a "pending_decision" resale escalation and the last
-    // message is from pepijn/sang, handle the YES/NO decision here and stop —
+    // message is from pepijn, handle the YES/NO decision here and stop —
     // before any of the normal forwarder/classification logic runs.
     if (isInternalEmail(fromEmail) && fromEmail !== CONFIG.FROM_EMAIL) {
       var resaleHandled = false;
@@ -102,7 +102,7 @@ function checkLeads() {
 
     // ---- Determine the real external party --------------------------------
     // For known form forwarders (requests@, groupleads@) and internal team
-    // members (pepijn@, sang@, eimee@), extract the real external sender from
+    // members (pepijn@, eimee@), extract the real external sender from
     // the email body rather than using the forwarder's own address.
     var classifyFrom = from;
     var classifyEmail = fromEmail;
@@ -230,7 +230,7 @@ function checkLeads() {
         // ---- Partner resale check (12_Partner_Reselling.js) ----------------
         // Before Sarah reaches out to a brand-new lead, check whether it
         // qualifies to be resold to a partner (Mach Media, Whyfive, etc).
-        // If it qualifies, Sarah parks the lead and emails pepijn+sang for a
+        // If it qualifies, Sarah parks the lead and emails pepijn for a
         // decision instead of contacting the lead herself.
         var resaleStarted = false;
         try {
