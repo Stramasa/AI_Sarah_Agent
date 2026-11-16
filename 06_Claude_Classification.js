@@ -208,17 +208,29 @@ function checkLeadCredibility(subject, body, from, leadEmail, classification) {
   var prompt =
     "You are reviewing an inbound email that was classified as a 'lead' for Stramasa, a B2B marketing agency.\n" +
     "Your job is to critically assess whether this email is a genuine, credible lead or a potential scam / phishing attempt.\n\n" +
-    "Scam signals to check:\n" +
-    "1. Domain mismatch: a well-known brand contacts Stramasa from an email domain that does NOT match the brand's real official domain (e.g., @kurtgeiger-inc.com instead of @kurtgeiger.com). Look up the brand name in the email and check if the email domain looks legitimate.\n" +
-    "2. Unsolicited big-budget partnership language: the email cites large media budgets (£100k+/month or equivalent) with vague long-term partnership framing but no specific project, scope, or deliverable details.\n" +
-    "3. The combination of a well-known brand name + mismatched domain + big-budget language is a strong scam signal.\n\n" +
-    "IMPORTANT: Big numbers alone are NOT a scam signal. Many legitimate companies have large budgets. The scam signal is the domain mismatch combined with unsolicited big-budget partnership language.\n\n" +
-    "Also flag anything else that seems off: generic greetings, copy-paste feel, pressure tactics, requests for payment or bank details, etc.\n\n" +
+    "IMPORTANT CONTEXT — How Stramasa receives leads:\n" +
+    "Stramasa's website contact forms and brand forms are forwarded to Sarah by internal addresses (info@stramasa.com, requests@stramasa.com, groupleads@stramasa.com). The FROM header of the email will therefore almost ALWAYS be a @stramasa.com address. This is NORMAL and expected — it is NOT a scam signal. The real lead's contact email is in the body and is provided separately as 'Lead email'. NEVER flag an email as suspicious merely because the FROM header is @stramasa.com or because the form was submitted through Stramasa's own website. That is how all legitimate leads arrive.\n\n" +
+    "Similarly, if the lead email domain differs from the FROM header domain, that is expected — the FROM is the forwarder, the lead email is the prospect. A difference between those two is NOT a domain mismatch.\n\n" +
+    "Scam signals to check — ONLY these:\n" +
+    "1. REAL domain mismatch: the LEAD'S OWN email domain does not match the company they claim to represent (e.g., someone claiming to be from Kurt Geiger but emailing from @kurtgeiger-inc.com instead of @kurtgeiger.com). This only applies to well-known, verifiable brands — NOT to small companies, startups, or companies you cannot verify.\n" +
+    "2. Unsolicited big-budget partnership language: the email cites large media budgets (£100k+/month or equivalent) with vague long-term partnership framing AND a domain mismatch as described in point 1. Big budgets alone are NOT a scam signal — many legitimate companies have large budgets.\n" +
+    "3. Requests for bank details, payment information, or sensitive credentials.\n" +
+    "4. Obvious phishing patterns: the email tries to impersonate a specific well-known brand but the lead email domain is a lookalike (extra words, different TLD, hyphenated variant of the real domain).\n\n" +
+    "DO NOT flag as not credible for any of these reasons:\n" +
+    "- The FROM header is @stramasa.com or another Stramasa brand domain (this is normal — the form forwarder)\n" +
+    "- The lead submitted through Stramasa's own contact form (that is how inbound leads work)\n" +
+    "- The lead's email domain differs from the FROM header domain (expected — FROM is the forwarder)\n" +
+    "- The message is vague or lacks specific budget figures (vague messages are still legitimate leads)\n" +
+    "- The lead mentions 'partnership' or 'long-term' without big budget numbers (normal business language)\n" +
+    "- The company name in the form differs from the lead's email domain (many companies use gmail or custom domains that don't match their company name)\n" +
+    "- The message is short or the lead just asks for a consultation or call\n" +
+    "- The lead email is a gmail.com, yahoo.com, or other free email address (many small businesses use these)\n\n" +
+    "When in doubt, return credible:true. Escalation should be reserved for clear scam patterns, not for leads that are simply vague or submitted through a contact form.\n\n" +
     "Return ONLY raw JSON with this exact structure:\n" +
     "{\"credible\":true} if the lead seems genuine, or\n" +
     "{\"credible\":false,\"reason\":\"short explanation of the concern\"} if it should be flagged for manager review.\n\n" +
-    "From: " + from + "\n" +
-    "Lead email: " + (leadEmail || "") + "\n" +
+    "From (forwarder header): " + from + "\n" +
+    "Lead email (real prospect): " + (leadEmail || "") + "\n" +
     "Subject: " + subject + "\n" +
     "Classifier said company: " + (classification.company || "") + "\n" +
     "Body:\n" + (body || "").substring(0, 1800);

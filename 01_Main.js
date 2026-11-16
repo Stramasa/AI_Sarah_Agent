@@ -225,11 +225,27 @@ function checkLeads() {
           Logger.log("checkLeadCredibility error: " + credErr);
         }
         if (!credibility.credible) {
+          // Always create a HubSpot deal even when escalating — the lead
+          // still exists in the pipeline and may be handled manually.
+          try {
+            var flaggedDealId = createHubspotDeal({
+              name: classification.name || "",
+              service: classification.service_interest || "",
+              email: classifyEmail,
+              brand: brand
+            });
+            if (flaggedDealId) {
+              Logger.log("HubSpot deal created for flagged lead: " + flaggedDealId + " (" + classifyEmail + ")");
+            }
+          } catch (hsErr) {
+            Logger.log("HubSpot deal creation error for flagged lead " + classifyEmail + ": " + hsErr);
+          }
+
           handleUnsureEmail(thread, subject, activeBody, from,
             "Lead credibility concern: " + (credibility.reason || "flagged by credibility check"));
           sessionLog.push("Lead flagged for credibility concern: " + subject);
           logAction(from, subject, "lead", "credibility_flagged", "",
-            "Lead flagged for manager review before outreach.", classifyEmail, credibility.reason || "");
+            "Lead flagged for manager review before outreach. HubSpot deal created.", classifyEmail, credibility.reason || "");
           thread.addLabel(processedLabel);
           return;
         }
