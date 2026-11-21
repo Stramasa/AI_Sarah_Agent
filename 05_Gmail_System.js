@@ -260,11 +260,34 @@ function handleBounceEmail(thread, subject, body, from) {
   thread.markRead();
 }
 function handleUnsureEmail(thread, subject, body, from, reason) {
+  // Include the manager's upcoming available slots (CET — Pepijn's timezone)
+  // so he can quickly see when he could take the call if he confirms it's a
+  // lead, without having to open the calendar himself.
+  var slotsBlock = "";
+  try {
+    var mgrSlots = getAvailableSlotsDetailed("EU");
+    if (mgrSlots && mgrSlots.length > 0) {
+      slotsBlock = "\n\nMy upcoming available times (CET):\n" +
+        mgrSlots.map(function(s) { return s.label; }).join("\n") +
+        "\n\nOr pick any time here: " + CONFIG.CALENDLY;
+    } else {
+      slotsBlock = "\n\nOr pick a time here: " + CONFIG.CALENDLY;
+    }
+  } catch (se) {
+    Logger.log("handleUnsureEmail slots error: " + se);
+  }
+
   sendEmail({
     to: CONFIG.ESCALATION_TO,
     cc: CONFIG.ESCALATION_CC,
     subject: "Sarah unsure: " + subject,
-    body: "Hi,\n\nI received an email I was not fully sure how to handle.\n\nReason: " + (reason || "Unclear") + "\nFrom: " + from + "\nSubject: " + subject + "\n\nSnippet:\n" + body.substring(0, 1200) + "\n\nSarah"
+    body: "Hi,\n\nI received an email I'm not fully sure how to handle.\n\n" +
+          "Why I'm unsure: " + (reason || "Unclear") + "\n\n" +
+          "From: " + from + "\n" +
+          "Subject: " + subject + "\n\n" +
+          "The email:\n" + body.substring(0, 1200) + "\n\n" +
+          "If this is a normal lead, just reply and tell me to go ahead — I'll contact them right away." +
+          slotsBlock + "\n\nSarah"
   });
   logAction(from, subject, "unsure", "manager_alerted", "", extractEmail(from), reason || "Forwarded to manager");
   thread.addLabel(getOrCreateLabel(CONFIG.LABEL_UNSURE));
