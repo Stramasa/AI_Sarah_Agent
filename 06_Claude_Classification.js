@@ -209,22 +209,26 @@ function checkLeadCredibility(subject, body, from, leadEmail, classification) {
     "You are reviewing an inbound email that was classified as a 'lead' for Stramasa, a B2B marketing agency.\n" +
     "Your job is to critically assess whether this email is a genuine, credible lead or a potential scam / phishing attempt.\n\n" +
     "IMPORTANT CONTEXT — How Stramasa receives leads:\n" +
-    "Stramasa's website contact forms and brand forms are forwarded to Sarah by internal addresses (info@stramasa.com, requests@stramasa.com, groupleads@stramasa.com). The FROM header of the email will therefore almost ALWAYS be a @stramasa.com address. This is NORMAL and expected — it is NOT a scam signal. The real lead's contact email is in the body and is provided separately as 'Lead email'. NEVER flag an email as suspicious merely because the FROM header is @stramasa.com or because the form was submitted through Stramasa's own website. That is how all legitimate leads arrive.\n\n" +
-    "Similarly, if the lead email domain differs from the FROM header domain, that is expected — the FROM is the forwarder, the lead email is the prospect. A difference between those two is NOT a domain mismatch.\n\n" +
+    "Stramasa operates multiple brands (Stramasa, Recruitshore, Axpira, Kobelphi, The Content Powerhouse, Introlynk, Vientra). EACH brand has its own website contact form, and those forms forward submissions to Sarah using the brand's own internal address (e.g. info@stramasa.com, requests@stramasa.com, groupleads@stramasa.com, info@recruitshore.com). The FROM header of the email will therefore almost ALWAYS be one of these Stramasa-owned brand domains. This is NORMAL and expected — it is NOT a scam signal, and it does NOT mean the lead is a self-submission from that company. The real lead's contact email is in the body and is provided separately as 'Lead email'. NEVER flag an email as suspicious merely because the FROM header matches a Stramasa brand domain or because the form was submitted through one of Stramasa's own websites. That is how ALL legitimate leads arrive at every brand.\n\n" +
+    "Similarly, if the lead email domain differs from the FROM header domain, that is expected — the FROM is the brand form forwarder, the lead email is the prospect. A difference between those two is NOT a domain mismatch. The lead using a free email provider (gmail.com, yahoo.com, etc.) while the FROM is a brand domain is also normal — many small businesses use gmail.\n\n" +
+    "RECRUITSHORE HIRE LEADS — these are never suspicious:\n" +
+    "Recruitshore is a Stramasa hiring-platform brand. Its 'Hire' form lets a company request consultants. These form submissions arrive with a FROM header of info@recruitshore.com (the Recruitshore form forwarder) and the prospect's own work email (often a gmail.com address) in the body. This is the normal, expected pattern. A 'hire' request is ALWAYS a legitimate lead — NEVER flag it as a domain mismatch, self-submission, test, or credibility concern, regardless of what email domain the prospect used. The classifier has already confirmed it is a hire request before this check runs.\n\n" +
     "Scam signals to check — ONLY these:\n" +
     "1. REAL domain mismatch: the LEAD'S OWN email domain does not match the company they claim to represent (e.g., someone claiming to be from Kurt Geiger but emailing from @kurtgeiger-inc.com instead of @kurtgeiger.com). This only applies to well-known, verifiable brands — NOT to small companies, startups, or companies you cannot verify.\n" +
     "2. Unsolicited big-budget partnership language: the email cites large media budgets (£100k+/month or equivalent) with vague long-term partnership framing AND a domain mismatch as described in point 1. Big budgets alone are NOT a scam signal — many legitimate companies have large budgets.\n" +
     "3. Requests for bank details, payment information, or sensitive credentials.\n" +
     "4. Obvious phishing patterns: the email tries to impersonate a specific well-known brand but the lead email domain is a lookalike (extra words, different TLD, hyphenated variant of the real domain).\n\n" +
     "DO NOT flag as not credible for any of these reasons:\n" +
-    "- The FROM header is @stramasa.com or another Stramasa brand domain (this is normal — the form forwarder)\n" +
-    "- The lead submitted through Stramasa's own contact form (that is how inbound leads work)\n" +
-    "- The lead's email domain differs from the FROM header domain (expected — FROM is the forwarder)\n" +
+    "- The FROM header is @stramasa.com, @recruitshore.com, @axpira.com, @kobelphi.com, @thecontentpowerhouse.com, @introlynk.com, or @vientra.com (these are ALL Stramasa brand form-forwarder addresses — normal)\n" +
+    "- The lead submitted through Stramasa's own contact form or any brand's contact form (that is how inbound leads work)\n" +
+    "- The lead's email domain differs from the FROM header domain (expected — FROM is the brand forwarder)\n" +
+    "- The lead's work email is a free provider (gmail.com, yahoo.com, etc.) while the FROM is a brand domain — normal for small businesses\n" +
     "- The message is vague or lacks specific budget figures (vague messages are still legitimate leads)\n" +
     "- The lead mentions 'partnership' or 'long-term' without big budget numbers (normal business language)\n" +
     "- The company name in the form differs from the lead's email domain (many companies use gmail or custom domains that don't match their company name)\n" +
     "- The message is short or the lead just asks for a consultation or call\n" +
-    "- The lead email is a gmail.com, yahoo.com, or other free email address (many small businesses use these)\n\n" +
+    "- The lead email is a gmail.com, yahoo.com, or other free email address (many small businesses use these)\n" +
+    "- The email is a Recruitshore 'hire' request of ANY kind (these are always legitimate leads — see the Recruitshore rule above)\n\n" +
     "When in doubt, return credible:true. Escalation should be reserved for clear scam patterns, not for leads that are simply vague or submitted through a contact form.\n\n" +
     "Return ONLY raw JSON with this exact structure:\n" +
     "{\"credible\":true} if the lead seems genuine, or\n" +

@@ -65,7 +65,7 @@ var CONFIG = {
   CALENDAR_TZ:     "Asia/Manila",
   CALENDAR_DAYS:   10,
   TEAM_CC:         ["pepijn@stramasa.com", "eimee@stramasa.com"],
-  FORWARDERS:      ["requests@stramasa.com", "groupleads@stramasa.com"],
+  FORWARDERS:      ["requests@stramasa.com", "groupleads@stramasa.com", "info@recruitshore.com"],
   // Internal team emails — when they forward an external email to Sarah,
   // treat it the same as a forwarder: extract the real sender from the body.
   INTERNAL_TEAM:   ["pepijn@stramasa.com", "eimee@stramasa.com"],

@@ -1,3 +1,154 @@
+// ---- Manager reply to an "unsure" escalation ---------------------------
+// When Sarah escalates an email as unsure, she labels it SarahUnsure and
+// marks it processed. If Pepijn (or another internal team member) then replies
+// saying "this is a normal lead, contact them", that reply lands in a thread
+// already labeled SarahProcessed — so the main checkLeads search never sees it.
+// This function scans for exactly that case and re-runs the normal lead flow.
+function handleManagerUnsureReplies() {
+  var processedLabel = getOrCreateLabel(CONFIG.LABEL_PROCESSED);
+  var unsureLabel = getOrCreateLabel(CONFIG.LABEL_UNSURE);
+  if (!unsureLabel) return;
+
+  var threads;
+  try {
+    threads = GmailApp.search(
+      "label:" + CONFIG.LABEL_UNSURE + " is:unread",
+      0, 25
+    );
+  } catch (e) {
+    Logger.log("handleManagerUnsureReplies search error: " + e);
+    return;
+  }
+  if (!threads || threads.length === 0) return;
+
+  threads.forEach(function(thread) {
+    var messages = thread.getMessages();
+    var lastMsg = messages[messages.length - 1];
+    var fromEmail = extractEmail(lastMsg.getFrom() || "");
+
+    // Only act on replies from internal team (not the original lead replying).
+    if (!isInternalEmail(fromEmail) || fromEmail === CONFIG.FROM_EMAIL) return;
+
+    var body = lastMsg.getPlainBody() || "";
+    var subject = lastMsg.getSubject() || "";
+
+    var decision = classifyManagerUnsureReply(body);
+    Logger.log("handleManagerUnsureReplies: '" + subject + "' -> " + decision);
+
+    if (decision !== "lead") {
+      // Manager said it's not a lead, or it's ambiguous. Mark read and leave.
+      thread.markRead();
+      return;
+    }
+
+    // Manager confirmed it IS a normal lead. Find the original external
+    // message in the thread (the one Sarah was unsure about) and run the
+    // normal new-lead flow on it.
+    var leadMsg = null;
+    for (var i = messages.length - 1; i >= 0; i--) {
+      var mEmail = extractEmail(messages[i].getFrom() || "");
+      if (mEmail !== CONFIG.FROM_EMAIL && !isInternalEmail(mEmail)) {
+        leadMsg = messages[i];
+        break;
+      }
+    }
+    if (!leadMsg) {
+      Logger.log("handleManagerUnsureReplies: no external lead message found in thread " + thread.getId());
+      thread.markRead();
+      return;
+    }
+
+    var leadSubject = leadMsg.getSubject() || "";
+    var leadBody = leadMsg.getPlainBody() || "";
+    var leadFrom = leadMsg.getFrom() || "";
+
+    // Re-extract the real external sender (form forwarders bury it in the body).
+    var senderInfo = analyzeEmailSender(leadSubject, leadBody, leadFrom);
+    var leadEmail = (senderInfo && senderInfo.replyTo && !isInternalEmail(senderInfo.replyTo))
+      ? senderInfo.replyTo
+      : extractEmail(leadFrom);
+    var leadName = (senderInfo && senderInfo.name) || "";
+
+    if (!leadEmail || isInternalEmail(leadEmail)) {
+      Logger.log("handleManagerUnsureReplies: could not determine external lead email for " + subject);
+      thread.markRead();
+      return;
+    }
+
+    // Check for duplicates — if Sarah already contacted this lead after the
+    // escalation (e.g. manager handled it manually), don't double-send.
+    if (findActiveLead(leadEmail)) {
+      Logger.log("handleManagerUnsureReplies: " + leadEmail + " already contacted, skipping");
+      thread.markRead();
+      return;
+    }
+
+    var to = lastMsg.getTo() || "";
+    var brand = detectBrand(leadSubject + " " + leadBody + " " + to);
+    var instructions = loadInstructions();
+    var knowledge = loadKnowledge();
+
+    var classification = {
+      type: "lead",
+      name: leadName,
+      service_interest: "",
+      company: "",
+      reason: "Manager confirmed this is a normal lead after unsure escalation."
+    };
+    try {
+      var quick = safeClassify(leadSubject, leadBody, leadEmail, instructions);
+      if (quick && quick.type === "lead") {
+        classification.service_interest = quick.service_interest || "";
+        classification.company = quick.company || "";
+      }
+    } catch (ce) {
+      Logger.log("handleManagerUnsureReplies reclassify error: " + ce);
+    }
+
+    var memory = buildSarahContext("lead", leadBody, instructions, knowledge);
+
+    try {
+      handleNewLead(thread, leadMsg, classification, brand, memory, fromEmail);
+      logAction(leadFrom, leadSubject, "lead", "manager_confirmed_lead", "", leadEmail,
+        "Manager (" + fromEmail + ") confirmed unsure email is a normal lead. Sarah contacted the lead.");
+      updateMemoryBrief("LEAD",
+        "Manager confirmed unsure escalation was a real lead: " + leadName + " <" + leadEmail + ">. Sarah reached out.");
+    } catch (he) {
+      Logger.log("handleManagerUnsureReplies handleNewLead error: " + he);
+    }
+
+    thread.markRead();
+  });
+}
+
+// Classifies a manager's reply to an "unsure" escalation.
+// Returns "lead" (manager says go ahead, it's a normal lead),
+// "notlead" (manager says ignore / it's spam / not a lead),
+// or "ambiguous" (unclear).
+function classifyManagerUnsureReply(body) {
+  var prompt =
+    "A manager replied to an email that Sarah (an AI assistant) escalated as 'unsure'.\n" +
+    "The manager is telling Sarah what to do with the original email.\n\n" +
+    "Return exactly one word:\n" +
+    "- LEAD — if the manager says this is a normal/good lead and Sarah should contact the prospect (e.g. 'thats normal, contact him', 'go ahead', 'reach out', 'this is a lead, send the intro', 'yes contact them').\n" +
+    "- NOTLEAD — if the manager says to ignore it, it's spam, it's not a lead, or to do nothing.\n" +
+    "- AMBIGUOUS — if the reply is unclear or does not clearly direct Sarah to act.\n\n" +
+    "Reply text:\n" + (body || "").substring(0, 600);
+  try {
+    var r = callClaude(prompt, "claude-haiku-4-5-20251001").trim().toUpperCase();
+    if (r.indexOf("LEAD") === 0 && r.indexOf("NOTLEAD") === -1) return "lead";
+    if (r.indexOf("NOTLEAD") === 0) return "notlead";
+    if (r.indexOf("AMBIGUOUS") === 0) return "ambiguous";
+    // Fallback keyword check for the common "No thats normal" pattern.
+    var lower = (body || "").toLowerCase();
+    if (/(thats normal|that's normal|this is normal|normal lead|go ahead|contact him|contact them|reach out|send the|yes)/i.test(lower)) return "lead";
+    if (/(ignore|not a lead|spam|do nothing|leave it|dismiss)/i.test(lower)) return "notlead";
+  } catch (e) {
+    Logger.log("classifyManagerUnsureReply error: " + e);
+  }
+  return "ambiguous";
+}
+
 function maybeNotifyTeamOwner(clientName, clientData, action, subject, body, clientEmail) {
   if (!action) return;
 

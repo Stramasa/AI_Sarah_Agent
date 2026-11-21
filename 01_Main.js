@@ -9,6 +9,15 @@ function checkLeads() {
 
   rescueForwardedLeadsFromSpam();
 
+  // Check for manager replies to previous "unsure" escalations. If Pepijn
+  // (or another team member) replied saying "this is a normal lead, contact
+  // them", Sarah re-runs the normal lead flow on the original message.
+  try {
+    handleManagerUnsureReplies();
+  } catch (murErr) {
+    Logger.log("handleManagerUnsureReplies error: " + murErr);
+  }
+
   // Search unread + threads manually flagged for reprocessing (label:SarahNeedsReview).
   // If you already read an email in Gmail before the trigger fires, add
   // label SarahNeedsReview to it and run checkLeads again.
@@ -219,10 +228,20 @@ function checkLeads() {
         // big-budget partnership language, etc). If not credible, escalate
         // to managers and stop — do not contact the lead or offer it for resale.
         var credibility = { credible: true };
-        try {
-          credibility = checkLeadCredibility(subject, activeBody, from, classifyEmail, classification);
-        } catch (credErr) {
-          Logger.log("checkLeadCredibility error: " + credErr);
+        // Recruitshore 'hire' submissions are inherently brand form-forwarded
+        // leads — the FROM is info@recruitshore.com and the prospect's work
+        // email often doesn't match that domain. Running the credibility scam
+        // check on them causes false 'domain mismatch' escalations. Skip it.
+        var isRecruitshoreHire = (brand === "Recruitshore") &&
+          /hire|looking to hire|we need|we are looking for|want to hire/i.test(subject + " " + activeBody);
+        if (isRecruitshoreHire) {
+          Logger.log("Skipping credibility check — Recruitshore hire lead: " + subject);
+        } else {
+          try {
+            credibility = checkLeadCredibility(subject, activeBody, from, classifyEmail, classification);
+          } catch (credErr) {
+            Logger.log("checkLeadCredibility error: " + credErr);
+          }
         }
         if (!credibility.credible) {
           // Always create a HubSpot deal even when escalating — the lead
