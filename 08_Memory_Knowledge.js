@@ -23,10 +23,7 @@ function updateMemoryBrief(type, context) {
   } catch(e) { Logger.log("Memory brief error: " + e); }
 }
 function loadInstructions() {
-  try {
-    var doc = DocumentApp.openById(CONFIG.INSTRUCTIONS_FILE_ID);
-    return doc.getBody().getText();
-  } catch(e) { Logger.log("INSTRUCTIONS load error: " + e); return ""; }
+  return SARAH_INSTRUCTIONS || "";
 }
 function loadKnowledge() {
   try {
