@@ -219,7 +219,7 @@ function checkLeadCredibility(subject, body, from, leadEmail, classification) {
     "3. Requests for bank details, payment information, or sensitive credentials.\n" +
     "4. Obvious phishing patterns: the email tries to impersonate a specific well-known brand but the lead email domain is a lookalike (extra words, different TLD, hyphenated variant of the real domain).\n\n" +
     "DO NOT flag as not credible for any of these reasons:\n" +
-    "- The FROM header is @stramasa.com, @recruitshore.com, @axpira.eu, @kobelphi.com, @thecontentpowerhouse.com, @introlynk.com, or @vientra.com (these are ALL Stramasa brand form-forwarder addresses — normal)\n" +
+    "- The FROM header is @stramasa.com, @recruitshore.com, @axpira.eu, @kobelphi.com, @thecontentpowerhouse.com, @introlynk.com, or @vientra.net (these are ALL Stramasa brand form-forwarder addresses — normal)\n" +
     "- The lead submitted through Stramasa's own contact form or any brand's contact form (that is how inbound leads work)\n" +
     "- The lead's email domain differs from the FROM header domain (expected — FROM is the brand forwarder)\n" +
     "- The lead's work email is a free provider (gmail.com, yahoo.com, etc.) while the FROM is a brand domain — normal for small businesses\n" +

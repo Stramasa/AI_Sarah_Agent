@@ -68,7 +68,7 @@ var CONFIG = {
   FORWARDERS:      ["requests@stramasa.com", "groupleads@stramasa.com", "info@recruitshore.com", "info@axpira.eu"],
   // Brand domains — any email FROM one of these domains is a brand contact-form
   // forwarder, not the real prospect. The prospect's email is in the body.
-  BRAND_DOMAINS:    ["stramasa.com", "recruitshore.com", "axpira.eu", "kobelphi.com", "thecontentpowerhouse.com", "introlynk.com", "vientra.com"],
+  BRAND_DOMAINS:    ["stramasa.com", "recruitshore.com", "axpira.eu", "kobelphi.com", "thecontentpowerhouse.com", "introlynk.com", "vientra.net"],
   // Internal team emails — when they forward an external email to Sarah,
   // treat it the same as a forwarder: extract the real sender from the body.
   INTERNAL_TEAM:   ["pepijn@stramasa.com", "eimee@stramasa.com"],
