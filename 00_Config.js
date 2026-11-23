@@ -65,7 +65,10 @@ var CONFIG = {
   CALENDAR_TZ:     "Asia/Manila",
   CALENDAR_DAYS:   10,
   TEAM_CC:         ["pepijn@stramasa.com", "eimee@stramasa.com"],
-  FORWARDERS:      ["requests@stramasa.com", "groupleads@stramasa.com", "info@recruitshore.com"],
+  FORWARDERS:      ["requests@stramasa.com", "groupleads@stramasa.com", "info@recruitshore.com", "info@axpira.eu"],
+  // Brand domains — any email FROM one of these domains is a brand contact-form
+  // forwarder, not the real prospect. The prospect's email is in the body.
+  BRAND_DOMAINS:    ["stramasa.com", "recruitshore.com", "axpira.eu", "kobelphi.com", "thecontentpowerhouse.com", "introlynk.com", "vientra.com"],
   // Internal team emails — when they forward an external email to Sarah,
   // treat it the same as a forwarder: extract the real sender from the body.
   INTERNAL_TEAM:   ["pepijn@stramasa.com", "eimee@stramasa.com"],
@@ -90,7 +93,7 @@ var CONFIG = {
 var DEFAULT_BRAND = "Stramasa";
 
 var BRAND_MAP = [
-  { keywords: ["axpira"],             brand: "Axpira" },
+  { keywords: ["axpira"],             brand: "Axpira", domain: "axpira.eu" },
   { keywords: ["kobelphi"],           brand: "Kobelphi" },
   { keywords: ["content powerhouse"], brand: "The Content Powerhouse" },
   { keywords: ["introlynk"],          brand: "Introlynk" },

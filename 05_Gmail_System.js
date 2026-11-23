@@ -294,7 +294,12 @@ function handleUnsureEmail(thread, subject, body, from, reason) {
   thread.markRead();
 }
 function rescueForwardedLeadsFromSpam() {
-  CONFIG.FORWARDERS.forEach(function(f) {
+  var rescueList = (CONFIG.FORWARDERS || []).slice();
+  // Also rescue any brand-domain forwarder from spam (info@axpira.eu, etc.)
+  (CONFIG.BRAND_DOMAINS || []).forEach(function(d) {
+    rescueList.push("@" + d);
+  });
+  rescueList.forEach(function(f) {
     try { GmailApp.search("in:spam is:unread from:" + f + " -label:" + CONFIG.LABEL_PROCESSED, 0, 10).forEach(function(t) { t.moveToInbox(); }); }
     catch(e) { Logger.log("Spam rescue error: " + e); }
   });

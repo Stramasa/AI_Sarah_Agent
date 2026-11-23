@@ -16,7 +16,7 @@ function classifyEmail(subject, body, from, instructions) {
     "If the email appears to be from or forwarded from an existing client but the client is not recognized, classify as client or unsure, never lead.\n" +
     "If there is any realistic chance this is an existing client email, classify as unsure rather than lead.\n" +
     "A lead asking for case studies, references, portfolio examples, pricing, company profile, proposal, RFP response, capabilities, or previous work examples is still a lead unless it clearly refers to an existing project.\n" +
-    "Website contact form submissions forwarded from requests@stramasa.com or groupleads@stramasa.com are leads unless the message is clearly spam, a vendor pitch, or an existing client project message.\n" +
+    "Website contact form submissions forwarded from requests@stramasa.com, groupleads@stramasa.com, info@recruitshore.com, info@axpira.eu, or any other Stramasa brand domain are leads unless the message is clearly spam, a vendor pitch, or an existing client project message.\n" +
     "IntroLynk contact form questions about buying leads, credits, pricing, subscriptions, registration, or how the platform works are leads unless the content itself is spam.\n" +
     "Recruitshore rule — this is critical for correct classification:\n" +
     "  - HIRE requests (someone looking to HIRE a freelancer/expert/profile) are LEADS, even if the requested profile is far outside Stramasa's normal marketing/strategy services. Recruitshore is a hiring platform; Stramasa turns these hire conversations into consulting engagements. So 'we are looking for an engineer', 'we need a designer', 'we want to hire a developer' = LEAD, not talent.\n" +
@@ -219,7 +219,7 @@ function checkLeadCredibility(subject, body, from, leadEmail, classification) {
     "3. Requests for bank details, payment information, or sensitive credentials.\n" +
     "4. Obvious phishing patterns: the email tries to impersonate a specific well-known brand but the lead email domain is a lookalike (extra words, different TLD, hyphenated variant of the real domain).\n\n" +
     "DO NOT flag as not credible for any of these reasons:\n" +
-    "- The FROM header is @stramasa.com, @recruitshore.com, @axpira.com, @kobelphi.com, @thecontentpowerhouse.com, @introlynk.com, or @vientra.com (these are ALL Stramasa brand form-forwarder addresses — normal)\n" +
+    "- The FROM header is @stramasa.com, @recruitshore.com, @axpira.eu, @kobelphi.com, @thecontentpowerhouse.com, @introlynk.com, or @vientra.com (these are ALL Stramasa brand form-forwarder addresses — normal)\n" +
     "- The lead submitted through Stramasa's own contact form or any brand's contact form (that is how inbound leads work)\n" +
     "- The lead's email domain differs from the FROM header domain (expected — FROM is the brand forwarder)\n" +
     "- The lead's work email is a free provider (gmail.com, yahoo.com, etc.) while the FROM is a brand domain — normal for small businesses\n" +

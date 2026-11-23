@@ -383,9 +383,20 @@ function handleSchedulingForward(thread, msg, classification, brand, externalEma
 function isKnownForwarder(email) {
   var needle = (email || "").toLowerCase().trim();
   if (!needle) return false;
-  return CONFIG.FORWARDERS.some(function(f) {
+  // Exact match against the explicit forwarder list
+  if (CONFIG.FORWARDERS.some(function(f) {
     return String(f || "").toLowerCase().trim() === needle;
-  });
+  })) return true;
+  // Also match by domain: any email FROM a brand domain is a contact-form
+  // forwarder (info@axpira.eu, info@kobelphi.com, etc.), not the real prospect.
+  var atIdx = needle.lastIndexOf("@");
+  if (atIdx !== -1) {
+    var domain = needle.substring(atIdx + 1);
+    return (CONFIG.BRAND_DOMAINS || []).some(function(d) {
+      return String(d || "").toLowerCase().trim() === domain;
+    });
+  }
+  return false;
 }
 
 function isInternalForwarder(email) {
